@@ -8,7 +8,7 @@ description:
 data-dir: ""
 
 executable cantor
-    build-depends: base -any,
+    build-depends: base >= 4.5.0.0,
                    QuickCheck >= 2.4.2,
                    parsec >= 3.1.2,
                    mtl >= 2.1.1,
