@@ -13,9 +13,11 @@ module Reader (
   runTests
 ) where
 
-import Control.Monad.State (State)
-import Text.Parsec hiding (State)
-import Text.Parsec.Indent (runIndent)
+import qualified Control.Monad
+import qualified Control.Monad.State
+import Text.Parsec
+import qualified Text.Parsec.Indent as Parsec.Indent
+import qualified Test.QuickCheck as QuickCheck
 import Test.QuickCheck.All (quickCheckAll)
 
 -- | Forms are the components of the Cantor parse tree. A form can be 1) an
@@ -23,10 +25,10 @@ import Test.QuickCheck.All (quickCheckAll)
 -- forms, or 3) A Sexp (a list of forms).
 data Form = Int Integer
           | Float Double
-          | Str String
-          | Binop String Form Form
+          -- | Str String
+          -- | Binop String Form Form
           | Ident String
-          | Sexp [Form]
+          -- | Sexp [Form]
             deriving Show
 
 -- | Indicates a failure during parsing.
@@ -41,20 +43,33 @@ readString = undefined
 -- will consist of legal Cantor syntax and will be able to be parsed by
 -- readString.
 showForm :: Form -> String
-showForm = undefined
+showForm = show
 
 -- | Runs quickCheck on all prop_ functions in this module
 runTests :: IO Bool
 runTests = $quickCheckAll
 
+instance QuickCheck.Arbitrary Form where
+  arbitrary = QuickCheck.oneof [
+    Control.Monad.liftM Int QuickCheck.arbitrary,
+    Control.Monad.liftM Float QuickCheck.arbitrary,
+    Control.Monad.liftM Ident QuickCheck.arbitrary
+    ]
+
 -- | The type for Cantor parsers (indentation-sensitive)
-type IParser a = ParsecT String () (State SourcePos) a
+type IParser a = ParsecT String () (Control.Monad.State.State SourcePos) a
 
 -- | Uses the specified parser to parse a string, returning the result or a
 -- ParseError.
 runParse :: IParser a -> String -> Either ParseError a
-runParse aParser input =
-  runIndent "(unknown source)" $ runParserT aParser () "(unknown_source)" input
+runParse aParser input = Parsec.Indent.runIndent source runParser
+  where source = "(unknown source)"
+        runParser = runParserT aParser () source input
+
+-- | Parses a single Form from the input stream.
+readForm :: IParser Form
+readForm = identifier <|>
+           intOrFloat
 
 -- | Parser which skips zero or more space or tab characters.
 skipSpaces :: IParser String
