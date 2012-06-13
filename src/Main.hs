@@ -1,17 +1,31 @@
 -- This is free and unencumbered software released into the public domain.
 
+{-# LANGUAGE CPP #-}
+
 -- | The Main module for Cantor.
 module Main (
     main
 ) where
 
-import Control.Monad (unless)
-import System.Exit (exitFailure)
-import qualified Reader
+import ReaderTest (readerTests)
+import Test.Framework (defaultMain)
 
--- | Entry point for unit tests.
+-- | Main function
+exeMain :: IO ()
+exeMain = undefined
+
+-- | Entry point for unit tests
+testMain :: IO ()
+testMain = defaultMain [
+  readerTests
+ ]
+
+-- This is a clunky, but portable, way to use the same Main module file
+-- for both an application and for unit tests.
+-- MAIN_FUNCTION is preprocessor macro set to exeMain or testMain.
+-- That way we can use the same file for both an application and for tests.
+#ifndef MAIN_FUNCTION
+#define MAIN_FUNCTION exeMain
+#endif
 main :: IO ()
-main = do
-    readerTests <- Reader.runTests
-    unless (and [readerTests]) exitFailure
-
+main = MAIN_FUNCTION

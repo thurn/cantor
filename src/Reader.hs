@@ -43,6 +43,7 @@ type InputName = String
 readForms :: InputName -> String -> Either ReadError [Form]
 readForms inputName string = runParse inputName (many readForm) string
 
+prop_reversible :: [Form] -> Bool
 prop_reversible forms = case readForms "" (showForms forms) of
   Left err   -> False
   Right forms' -> forms == forms'
@@ -110,6 +111,8 @@ arbitraryIdent = do
   where letters     = ['a' .. 'z'] ++ ['A' .. 'Z']
         initialChar = QuickCheck.elements letters
         identChar   = QuickCheck.elements (letters ++ "0123456789" ++ identSymbols)
+
+
 
 exponentPart :: IParser String
 exponentPart = do
