@@ -15,11 +15,17 @@ import qualified Test.QuickCheck                      as QuickCheck
 
 instance QuickCheck.Arbitrary Form where
   arbitrary = QuickCheck.oneof [
-    liftM Int QuickCheck.arbitrary,
-    liftM Float QuickCheck.arbitrary,
-    liftM Str arbitraryString,
-    liftM Ident arbitraryIdent
+    arbitraryAtom,
+    arbitrarySexp
     ]
+
+arbitraryAtom :: QuickCheck.Gen Form
+arbitraryAtom = QuickCheck.oneof [
+  liftM Int QuickCheck.arbitrary,
+  liftM Float QuickCheck.arbitrary,
+  liftM Str arbitraryString,
+  liftM Ident arbitraryIdent
+  ]
 
 identInitialChars :: String
 identInitialChars = ['a' .. 'z'] ++ ['A' .. 'Z']
@@ -38,6 +44,20 @@ arbitraryString :: QuickCheck.Gen String
 arbitraryString = do
   s <- QuickCheck.arbitrary
   return $ show (s :: String)
+
+arbitrarySexp :: QuickCheck.Gen Form
+arbitrarySexp = QuickCheck.sized randomSexp
+
+randomSexp 0 = arbitraryAtom
+randomSexp n = QuickCheck.oneof [
+  arbitraryAtom,
+  listOfSize 0,
+  listOfSize 1,
+  listOfSize 2,
+  listOfSize 3
+  ]
+  where nextRandom = randomSexp (n `div` 2)
+        listOfSize size = liftM Sexp $ QuickCheck.vectorOf size $ nextRandom
 
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
