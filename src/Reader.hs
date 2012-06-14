@@ -11,17 +11,20 @@ module Reader (
   showForms,
 ) where
 
+import           Text.Parsec
+
 import qualified Control.Monad.State
-import qualified Data.List as List
-import Text.Parsec
-import qualified Text.Parsec.Indent as Parsec.Indent
+import qualified Data.Char           as Char
+import qualified Data.List           as List
+import qualified Text.Parsec.Char    as Parsec.Char
+import qualified Text.Parsec.Indent  as Parsec.Indent
 
 -- | Forms are the components of the Cantor parse tree. A form can be 1) an
 -- atom, such as an identifier or literal, 2) an operator application to other
 -- forms, or 3) A Sexp (a list of forms).
 data Form = Int Integer
           | Float Double
-          -- | Str String
+          | Str String
           -- | Binop String Form Form
           | Ident String
           -- | Sexp [Form]
@@ -48,6 +51,7 @@ showForm :: Form -> String
 showForm (Int i)   = show i
 showForm (Float f) = show f
 showForm (Ident s) = s
+showForm (Str s) = show s
 
 -- | The type for Cantor parsers (indentation-sensitive)
 type IParser a = ParsecT String () (Control.Monad.State.State SourcePos) a
@@ -62,7 +66,8 @@ runParse source aParser input = Parsec.Indent.runIndent source run
 readForm :: IParser Form
 readForm = identifier <|>
            intOrFloat <|>
-           initialHyphen
+           initialHyphen <|>
+           stringLiteral
 
 -- | Parser which skips zero or more space or tab characters.
 skipSpaces :: IParser String
@@ -114,3 +119,67 @@ initialHyphen = do
     Int i   -> Int $ negate i
     Float f -> Float $ negate f
     _       -> error "Unexpected return from intOrFloat"
+
+decimal         = number 10 digit
+
+number base baseDigit = do
+  digits <- many1 baseDigit
+  let n = foldl (\x d -> base*x + toInteger (Char.digitToInt d)) 0 digits
+  seq n (return n)
+
+stringLiteral :: IParser Form
+stringLiteral = do
+  str <- between (char '"') (char '"') (many stringChar)
+  skipSpaces
+  return $ Str $ foldr (maybe id (:)) "" str
+
+stringChar = do c <- satisfy stringLetter
+                return (Just c)
+             <|> stringEscape
+             <?> "string character"
+
+stringLetter c = c /= '"' && c /= '\\' && c > '\026'
+
+stringEscape = do{ char '\\'
+                 ;     do{ escapeGap  ; return Nothing }
+                   <|> do{ escapeEmpty; return Nothing }
+                   <|> do{ esc <- escapeCode; return (Just esc) }
+                 }
+
+escapeEmpty = char '&'
+
+escapeGap = do many1 space
+               char '\\' <?> "end of string gap"
+
+escapeCode = charEsc <|> charNum <|> charAscii <|> charControl <?> "escape code"
+
+charControl = do char '^'
+                 code <- upper
+                 return (toEnum (fromEnum code - fromEnum 'A'))
+
+charNum = do code <- decimal
+                     <|> do{ char 'o'; number 8 Parsec.Char.octDigit }
+                     <|> do{ char 'x'; number 16 Parsec.Char.hexDigit }
+             return (toEnum (fromInteger code))
+
+charEsc = choice (map parseEsc escMap)
+  where parseEsc (c,code) = do{ char c; return code }
+
+charAscii = choice (map parseAscii asciiMap)
+  where parseAscii (asc,code) = try (do{ string asc; return code })
+
+
+escMap = zip ("abfnrtv\\\"\'") ("\a\b\f\n\r\t\v\\\"\'")
+asciiMap = zip (ascii3codes ++ ascii2codes) (ascii3 ++ ascii2)
+
+ascii2codes = ["BS","HT","LF","VT","FF","CR","SO","SI","EM",
+               "FS","GS","RS","US","SP"]
+ascii3codes = ["NUL","SOH","STX","ETX","EOT","ENQ","ACK","BEL",
+               "DLE","DC1","DC2","DC3","DC4","NAK","SYN","ETB",
+               "CAN","SUB","ESC","DEL"]
+
+ascii2 = ['\BS','\HT','\LF','\VT','\FF','\CR','\SO','\SI',
+          '\EM','\FS','\GS','\RS','\US','\SP']
+ascii3 = ['\NUL','\SOH','\STX','\ETX','\EOT','\ENQ','\ACK',
+          '\BEL','\DLE','\DC1','\DC2','\DC3','\DC4','\NAK',
+          '\SYN','\ETB','\CAN','\SUB','\ESC','\DEL']

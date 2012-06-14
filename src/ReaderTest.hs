@@ -6,17 +6,18 @@ module ReaderTest (
   readerTests
 ) where
 
-import           Control.Monad (liftM)
+import           Control.Monad                        (liftM)
 import           Reader
-import           Test.Framework (Test)
+import           Test.Framework                       (Test)
 import           Test.Framework.Providers.QuickCheck2 (testProperty)
-import           Test.Framework.TH (testGroupGenerator)
-import qualified Test.QuickCheck as QuickCheck
+import           Test.Framework.TH                    (testGroupGenerator)
+import qualified Test.QuickCheck                      as QuickCheck
 
 instance QuickCheck.Arbitrary Form where
   arbitrary = QuickCheck.oneof [
     liftM Int QuickCheck.arbitrary,
     liftM Float QuickCheck.arbitrary,
+    liftM Str arbitraryString,
     liftM Ident arbitraryIdent
     ]
 
@@ -32,7 +33,12 @@ arbitraryIdent = do
   c  <- QuickCheck.elements identInitialChars
   cs <- QuickCheck.listOf $ QuickCheck.elements identSubsequentChars
   return $ c:cs
-        
+
+arbitraryString :: QuickCheck.Gen String
+arbitraryString = do
+  s <- QuickCheck.arbitrary
+  return $ show (s :: String)
+
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
 readAndCheck :: String -> ([Form] -> Bool) -> Bool
@@ -61,6 +67,9 @@ instance QuickCheck.Arbitrary ArbitraryIdent where
 -- | Generate an arbitrary identifier and try reading it.
 prop_readIdent :: ArbitraryIdent -> Bool
 prop_readIdent (ArbitraryIdent ident) = readAndCheck ident (== [Ident ident])
+
+prop_readString :: String -> Bool
+prop_readString s = readAndCheck (show s) (== [Str s])
 
 readerTests :: Test
 readerTests = $testGroupGenerator
