@@ -12,6 +12,7 @@ cabal-version:  >= 1.6
 executable cantor
     main-is:        Main.hs
     buildable:      True
+    ghc-options:    -fno-warn-unused-do-bind -threaded
     hs-source-dirs: src
     build-depends:  base >= 4.3,
                     QuickCheck >= 2.4, 
@@ -22,7 +23,7 @@ executable cantor
 test-suite test-cantor
     type:           exitcode-stdio-1.0
     main-is:        Main.hs
-    ghc-options:    -Wall -threaded
+    ghc-options:    -Wall -threaded -fno-warn-unused-do-bind
     buildable:      True
     hs-source-dirs: src
     cpp-options:    -DMAIN_FUNCTION=testMain
