@@ -7,6 +7,7 @@ module ReaderTest (
 ) where
 
 import           Control.Monad                        (liftM)
+import           Data.List                            (foldl')
 import           Reader
 import           Test.Framework                       (Test)
 import           Test.Framework.Providers.QuickCheck2 (testProperty)
@@ -48,6 +49,7 @@ arbitraryString = do
 arbitrarySexp :: QuickCheck.Gen Form
 arbitrarySexp = QuickCheck.sized randomSexp
 
+randomSexp :: Int -> QuickCheck.Gen Form
 randomSexp 0 = arbitraryAtom
 randomSexp n = QuickCheck.oneof [
   arbitraryAtom,
@@ -90,6 +92,44 @@ prop_readIdent (ArbitraryIdent ident) = readAndCheck ident (== [Ident ident])
 
 prop_readString :: String -> Bool
 prop_readString s = readAndCheck (show s) (== [Str s])
+
+-- | Represents strings which are *not* valid Cantor syntax
+newtype InvalidSyntax = InvalidSyntax String deriving (Show, Read, Eq)
+
+instance QuickCheck.Arbitrary InvalidSyntax where
+  arbitrary = QuickCheck.oneof [
+    liftM InvalidSyntax (balancedString not)
+    ]
+
+-- | Checks if a string consists of balanced parentheses
+isBalanced :: String -> Bool
+isBalanced list = null $ foldl' op [] list
+  where op ('(':xs) ')' = xs
+        op xs x         = x:xs
+
+-- | Generates strings consisting of either balanced parentheses (by passing
+-- 'id' as the predicate) or unbalanced parentheses (by passing 'not')
+balancedString :: (Bool -> Bool) -> QuickCheck.Gen String
+balancedString p = QuickCheck.suchThat parens (p . isBalanced)
+  where parens = QuickCheck.listOf $ QuickCheck.elements "()"
+
+prop_invalidSyntax :: InvalidSyntax -> Bool
+prop_invalidSyntax (InvalidSyntax s) = case readForms "" s of
+  Left _ -> True
+  Right _ -> False
+
+-- | Represents strings which should parse as valid Cantor syntax
+newtype ValidSyntax = ValidSyntax String deriving (Show, Read, Eq)
+
+instance QuickCheck.Arbitrary ValidSyntax where
+  arbitrary = QuickCheck.oneof [
+    liftM ValidSyntax (balancedString id)
+    ]
+
+prop_validSyntax :: ValidSyntax -> Bool
+prop_validSyntax (ValidSyntax s) = case readForms "" s of
+  Left _ -> False
+  Right _ -> True
 
 readerTests :: Test
 readerTests = $testGroupGenerator

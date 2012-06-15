@@ -23,7 +23,11 @@ import qualified Token              as Token
 -- should be a succient description of the origin of this string, e.g., a
 -- filename.
 readForms :: InputName -> String -> Either ReadError [Form]
-readForms inputName = runParse inputName (many readForm)
+readForms inputName = runParse inputName topLevel
+  where topLevel = do
+          forms <- many readForm
+          eof
+          return forms
 
 -- | Converts a list of forms into a String representation. The resulting string
 -- will consist of legal Cantor syntax and will be able to be parsed by
