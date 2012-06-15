@@ -10,8 +10,10 @@ import           Control.Monad                        (liftM)
 import           Data.List                            (foldl')
 import           Reader
 import           Test.Framework                       (Test)
+import           Test.Framework.Providers.HUnit       (testCase)
 import           Test.Framework.Providers.QuickCheck2 (testProperty)
 import           Test.Framework.TH                    (testGroupGenerator)
+import           Test.HUnit                           (Assertion, assertEqual, assertFailure, (@?=))
 import qualified Test.QuickCheck                      as QuickCheck
 
 instance QuickCheck.Arbitrary Form where
@@ -127,14 +129,14 @@ instance QuickCheck.Arbitrary ValidSyntax where
     liftM ArbitraryVector (arbitraryBetween '[' ']'),
     liftM ArbitraryDict (arbitraryBetween '{' '}')
     ]
-    
+
 arbitraryBetween :: Char -> Char -> QuickCheck.Gen String
 arbitraryBetween c1 c2 = QuickCheck.oneof $ map generate [0 .. 4]
   where generate n = do forms <- QuickCheck.vectorOf n QuickCheck.arbitrary
                         return ([c1] ++ (showForms forms) ++ [c2])
 
 sexpHeadedBy :: Form -> [Form] -> Bool
-sexpHeadedBy form ((Sexp (head:_)):_) = head == form
+sexpHeadedBy form ((Sexp (first:_)):_) = first == form
 sexpHeadedBy _ _                      = False
 
 prop_validSyntax :: ValidSyntax -> Bool
@@ -146,6 +148,23 @@ prop_validSyntax (ArbitraryVector s) =
   readAndCheck s (sexpHeadedBy (Ident "vector"))
 prop_validSyntax (ArbitraryDict s) =
   readAndCheck s (sexpHeadedBy (Ident "dict"))
+
+readOne :: String -> Form -> Assertion
+readOne input expected = case readForms "" input of
+  Left err     -> assertFailure $ "Error " ++ show err ++ " for input " ++ input
+  Right []     -> assertFailure $ "No forms read for input " ++ input
+  Right [form] -> assertEqual "Forms were not equal" expected form
+  Right _      -> assertFailure $ "Multiple forms returned for input " ++ input
+
+case_vector :: Assertion
+case_vector = do
+  readOne "[]" $ Sexp [Ident "vector"]
+  readOne "[1]" $ Sexp [Ident "vector", Int 1]
+
+case_dict :: Assertion
+case_dict = do
+  readOne "{}" $ Sexp [Ident "dict"]
+  readOne "{1}" $ Sexp [Ident "dict", Int 1]
 
 readerTests :: Test
 readerTests = $testGroupGenerator
