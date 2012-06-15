@@ -15,10 +15,7 @@ import           Test.Framework.TH                    (testGroupGenerator)
 import qualified Test.QuickCheck                      as QuickCheck
 
 instance QuickCheck.Arbitrary Form where
-  arbitrary = QuickCheck.oneof [
-    arbitraryAtom,
-    arbitrarySexp
-    ]
+  arbitrary = QuickCheck.sized arbitraryForm
 
 arbitraryAtom :: QuickCheck.Gen Form
 arbitraryAtom = QuickCheck.oneof [
@@ -46,19 +43,18 @@ arbitraryString = do
   s <- QuickCheck.arbitrary
   return $ show (s :: String)
 
-arbitrarySexp :: QuickCheck.Gen Form
-arbitrarySexp = QuickCheck.sized randomSexp
-
-randomSexp :: Int -> QuickCheck.Gen Form
-randomSexp 0 = arbitraryAtom
-randomSexp n = QuickCheck.oneof [
-  arbitraryAtom,
-  listOfSize 0,
-  listOfSize 1,
-  listOfSize 2,
-  listOfSize 3
+arbitraryForm :: Int -> QuickCheck.Gen Form
+arbitraryForm 0 = arbitraryAtom
+arbitraryForm n = QuickCheck.frequency [
+  (15, arbitraryAtom),
+  (10, listOfSize 1),
+  (5, listOfSize 2),
+  (1, listOfSize 3),
+  (1, listOfSize 4),
+  (1, listOfSize 5),
+  (1, listOfSize 0)
   ]
-  where nextRandom = randomSexp (n `div` 2)
+  where nextRandom = arbitraryForm (n `div` 2)
         listOfSize size = liftM Sexp $ QuickCheck.vectorOf size $ nextRandom
 
 -- | Reads forms from the provided string and applies the provided predicate to
@@ -105,6 +101,8 @@ instance QuickCheck.Arbitrary InvalidSyntax where
 isBalanced :: String -> Bool
 isBalanced list = null $ foldl' op [] list
   where op ('(':xs) ')' = xs
+        op ('[':xs) ']' = xs
+        op ('{':xs) '}' = xs
         op xs x         = x:xs
 
 -- | Generates strings consisting of either balanced parentheses (by passing

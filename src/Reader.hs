@@ -54,10 +54,24 @@ readForm = Token.identifier <|>
            Token.intOrFloat <|>
            Token.initialHyphen <|>
            Token.stringLiteral <|>
-           readSexp
+           readSexp <|>
+           readVector <|>
+           readDict
 
 readSexp :: CantorParser Form
 readSexp = do
   sexp <- between (char '(') (char ')') (many readForm)
   Token.skipSpaces
   return $ Sexp sexp
+
+readVector :: CantorParser Form
+readVector = do
+  sexp <- between (char '[') (char ']') (many readForm)
+  Token.skipSpaces
+  return $ Sexp $ (Ident "vector") : sexp
+
+readDict :: CantorParser Form
+readDict = do
+  sexp <- between (char '{') (char '}') (many readForm)
+  Token.skipSpaces
+  return $ Sexp $ (Ident "dict") : sexp

@@ -12,9 +12,9 @@ import qualified Text.Parsec         as Parsec
 data Form = Int Integer
           | Float Double
           | Str String
-          -- | Binop String Form Form
           | Ident String
           | Sexp [Form]
+          -- | Binop String Form Form
             deriving (Show, Read, Eq)
 
 -- | Indicates a failure during parsing.
