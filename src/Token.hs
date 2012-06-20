@@ -26,7 +26,8 @@ module Token (
   identifier,
   intOrFloat,
   initialHyphen,
-  skipSpaces
+  skipSpaces,
+  SkipNewlines(..)
 ) where
 
 import           Datatypes
@@ -35,9 +36,13 @@ import           Text.Parsec
 import qualified Data.Char        as Char
 import qualified Text.Parsec.Char as Parsec.Char
 
--- | Parser which skips zero or more space or tab characters.
-skipSpaces :: CantorParser String
-skipSpaces = many (oneOf " \t")
+data SkipNewlines = SkipNewlines | SignificantNewlines
+
+-- | Parser which skips whitespace. Only skips newlines if 'True' is passed as
+-- the argument.
+skipSpaces :: SkipNewlines -> CantorParser String
+skipSpaces SkipNewlines        = many (oneOf " \t\n")
+skipSpaces SignificantNewlines = many (oneOf " \t")
 
 -- | Symbols that may legally occur as an identifier as long as they are not the
 -- first character.
@@ -45,11 +50,11 @@ identSymbols :: String
 identSymbols = "!%&*-+=\\|?/<>"
 
 -- | Parses an identifier
-identifier :: CantorParser Form
-identifier = do
+identifier :: SkipNewlines -> CantorParser Form
+identifier skipNewlines = do
   c  <- letter
   cs <- many (alphaNum <|> oneOf identSymbols)
-  skipSpaces
+  skipSpaces skipNewlines
   return $ Ident $ c:cs
 
 exponentPart :: CantorParser String
@@ -70,17 +75,17 @@ fraction s = do
 
 -- | Parses either an Int or a Float, depending on whether a '.' character is
 -- found in the stream.
-intOrFloat :: CantorParser Form
-intOrFloat = do
+intOrFloat :: SkipNewlines -> CantorParser Form
+intOrFloat skipNewlines = do
   int  <- many1 digit
   form <- option (Int (read int)) (fraction int)
-  skipSpaces
+  skipSpaces skipNewlines
   return form
 
-initialHyphen :: CantorParser Form
-initialHyphen = do
+initialHyphen :: SkipNewlines -> CantorParser Form
+initialHyphen skipNewlines = do
   char '-'
-  num <- intOrFloat
+  num <- intOrFloat skipNewlines
   return $ case num of
     Int i   -> Int $ negate i
     Float f -> Float $ negate f
@@ -95,10 +100,10 @@ number base baseDigit = do
   let n = foldl (\x d -> base*x + toInteger (Char.digitToInt d)) 0 digits
   seq n (return n)
 
-stringLiteral :: CantorParser Form
-stringLiteral = do
+stringLiteral :: SkipNewlines -> CantorParser Form
+stringLiteral skipNewlines = do
   str <- between (char '"') (char '"') (many stringChar)
-  skipSpaces
+  skipSpaces skipNewlines
   return $ Str $ foldr (maybe id (:)) "" str
 
 stringChar :: CantorParser (Maybe Char)

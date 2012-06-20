@@ -11,21 +11,21 @@ module Reader (
   showForms,
 ) where
 
+import           Data.List          (intercalate)
 import           Datatypes
 import           Text.Parsec
-
-import qualified Data.List          as List
-import qualified Text.Parsec.Indent as Parsec.Indent
-import qualified Token              as Token
+import           Text.Parsec.Indent (runIndent, withBlock, indentParens)
+import           Token
 
 -- | Parses a string and returns a list of top-level Forms present in the
 -- string or an appropriate ReadError if the input is invalid. The inputName
 -- should be a succient description of the origin of this string, e.g., a
 -- filename.
 readForms :: InputName -> String -> Either ReadError [Form]
-readForms inputName = runParse inputName topLevel
+readForms _ ""             = Right []
+readForms inputName input = runParse inputName topLevel (input ++ "\n")
   where topLevel = do
-          forms <- many readForm
+          forms <- many indentedForm
           eof
           return forms
 
@@ -33,45 +33,61 @@ readForms inputName = runParse inputName topLevel
 -- will consist of legal Cantor syntax and will be able to be parsed by
 -- readForms.
 showForms :: [Form] -> String
-showForms forms = List.intercalate "\t" $ map showForm forms
+showForms forms = intercalate "\n" $ map showForm forms
 
 showForm :: Form -> String
 showForm (Int i)   = show i
 showForm (Float f) = show f
 showForm (Ident i) = i
 showForm (Str s) = show s
-showForm (Sexp s) = "(" ++ List.intercalate " " (map showForm s) ++ ")"
+showForm (Sexp s) = "(" ++ unwords (map showForm s) ++ ")"
 
 -- | Uses the specified parser to parse a string, returning the result or a
 -- ParseError.
 runParse :: InputName -> CantorParser a -> String -> Either ParseError a
-runParse source aParser input = Parsec.Indent.runIndent source run
+runParse source aParser input = runIndent source run
   where run = runParserT aParser () source input
 
--- | Parses a single Form from the input stream.
-readForm :: CantorParser Form
-readForm = Token.identifier <|>
-           Token.intOrFloat <|>
-           Token.initialHyphen <|>
-           Token.stringLiteral <|>
-           readSexp <|>
-           readVector <|>
-           readDict
+indentedForm :: CantorParser Form
+indentedForm = do
+  sexp <- withBlock makeSexp readLine indentedForm
+  return sexp
+  where makeSexp first []   = first
+        makeSexp first rest = Sexp $ first : rest
 
-readSexp :: CantorParser Form
-readSexp = do
-  sexp <- between (char '(') (char ')') (many readForm)
-  Token.skipSpaces
+readLine :: CantorParser Form
+readLine = do
+  forms <- many1 (readForm SignificantNewlines)
+  char '\n'
+  skipSpaces SignificantNewlines
+  return $ makeSexp forms
+  where makeSexp [form] = form
+        makeSexp forms  = Sexp forms
+
+-- | Parses a single Form from the input stream.
+readForm :: SkipNewlines -> CantorParser Form
+readForm skipNewlines = identifier skipNewlines <|>
+                        intOrFloat skipNewlines <|>
+                        initialHyphen skipNewlines <|>
+                        stringLiteral skipNewlines<|>
+                        readSexp skipNewlines <|>
+                        readVector skipNewlines <|>
+                        readDict skipNewlines
+
+readSexp :: SkipNewlines -> CantorParser Form
+readSexp skipNewlines = do
+  sexp <- between (char '(') (char ')') (many (readForm SkipNewlines))
+  skipSpaces skipNewlines
   return $ Sexp sexp
 
-readVector :: CantorParser Form
-readVector = do
-  sexp <- between (char '[') (char ']') (many readForm)
-  Token.skipSpaces
-  return $ Sexp $ (Ident "vector") : sexp
+readVector :: SkipNewlines -> CantorParser Form
+readVector skipNewlines = do
+  sexp <- between (char '[') (char ']') (many (readForm SkipNewlines))
+  skipSpaces skipNewlines
+  return $ Sexp $ Ident "vector" : sexp
 
-readDict :: CantorParser Form
-readDict = do
-  sexp <- between (char '{') (char '}') (many readForm)
-  Token.skipSpaces
-  return $ Sexp $ (Ident "dict") : sexp
+readDict :: SkipNewlines -> CantorParser Form
+readDict skipNewlines = do
+  sexp <- between (char '{') (char '}') (many (readForm SkipNewlines))
+  skipSpaces skipNewlines
+  return $ Sexp $ Ident "dict" : sexp

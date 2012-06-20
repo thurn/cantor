@@ -13,7 +13,7 @@ import           Test.Framework                       (Test)
 import           Test.Framework.Providers.HUnit       (testCase)
 import           Test.Framework.Providers.QuickCheck2 (testProperty)
 import           Test.Framework.TH                    (testGroupGenerator)
-import           Test.HUnit                           (Assertion, assertEqual, assertFailure, (@?=))
+import           Test.HUnit                           (Assertion, assertEqual, assertFailure)
 import qualified Test.QuickCheck                      as QuickCheck
 
 instance QuickCheck.Arbitrary Form where
@@ -50,7 +50,7 @@ arbitraryForm n = QuickCheck.frequency [
   (1, listOfSize 0)
   ]
   where nextRandom = arbitraryForm (n `div` 2)
-        listOfSize size = liftM Sexp $ QuickCheck.vectorOf size $ nextRandom
+        listOfSize size = liftM Sexp $ QuickCheck.vectorOf size nextRandom
 
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
@@ -133,11 +133,11 @@ instance QuickCheck.Arbitrary ValidSyntax where
 arbitraryBetween :: Char -> Char -> QuickCheck.Gen String
 arbitraryBetween c1 c2 = QuickCheck.oneof $ map generate [0 .. 4]
   where generate n = do forms <- QuickCheck.vectorOf n QuickCheck.arbitrary
-                        return ([c1] ++ (showForms forms) ++ [c2])
+                        return ([c1] ++ showForms forms ++ [c2])
 
 sexpHeadedBy :: Form -> [Form] -> Bool
-sexpHeadedBy form ((Sexp (first:_)):_) = first == form
-sexpHeadedBy _ _                      = False
+sexpHeadedBy form (Sexp (first:_):_) = first == form
+sexpHeadedBy _ _                     = False
 
 prop_validSyntax :: ValidSyntax -> Bool
 prop_validSyntax (BalancedString s) =
