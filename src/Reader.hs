@@ -70,24 +70,19 @@ readForm skipNewlines = identifier skipNewlines <|>
                         intOrFloat skipNewlines <|>
                         initialHyphen skipNewlines <|>
                         stringLiteral skipNewlines<|>
-                        readSexp skipNewlines <|>
-                        readVector skipNewlines <|>
-                        readDict skipNewlines
+                        readBalanced skipNewlines '(' ')' id <|>
+                        readBalanced skipNewlines '[' ']' (Ident "vector" :) <|>
+                        readBalanced skipNewlines '{' '}' (Ident "dict" :)
 
-readSexp :: SkipNewlines -> CantorParser Form
-readSexp skipNewlines = do
-  sexp <- between (char '(') (char ')') (many (readForm SkipNewlines))
+readBalanced :: SkipNewlines -> 
+             Char ->
+             Char ->
+             ([Form] -> [Form]) ->
+             CantorParser Form
+readBalanced skipNewlines left right fn = do
+  char left
+  skipSpaces SkipNewlines
+  sexp <- many (readForm SkipNewlines)
+  char right
   skipSpaces skipNewlines
-  return $ Sexp sexp
-
-readVector :: SkipNewlines -> CantorParser Form
-readVector skipNewlines = do
-  sexp <- between (char '[') (char ']') (many (readForm SkipNewlines))
-  skipSpaces skipNewlines
-  return $ Sexp $ Ident "vector" : sexp
-
-readDict :: SkipNewlines -> CantorParser Form
-readDict skipNewlines = do
-  sexp <- between (char '{') (char '}') (many (readForm SkipNewlines))
-  skipSpaces skipNewlines
-  return $ Sexp $ Ident "dict" : sexp
+  return $ Sexp $ fn sexp

@@ -19,6 +19,10 @@ import qualified Test.QuickCheck                      as QuickCheck
 instance QuickCheck.Arbitrary Form where
   arbitrary = QuickCheck.sized arbitraryForm
 
+right :: Either a b -> b
+right (Left _) = error "Expected Right"
+right (Right x) = x
+
 arbitraryAtom :: QuickCheck.Gen Form
 arbitraryAtom = QuickCheck.oneof [
   liftM Int QuickCheck.arbitrary,
@@ -162,9 +166,49 @@ case_vector = do
   readOne "[1]" $ Sexp [Ident "vector", Int 1]
 
 case_dict :: Assertion
+
 case_dict = do
   readOne "{}" $ Sexp [Ident "dict"]
   readOne "{1}" $ Sexp [Ident "dict", Int 1]
+
+readSame :: String -> String -> Assertion
+x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
+  where rightRead = right . (readForms "")
+
+case_indent :: Assertion
+case_indent = do
+  "alpha\n  bravo" `readSame`
+      "(alpha bravo)"
+  "alpha bravo\n  charlie" `readSame`
+      "((alpha bravo) charlie)"
+  "alpha bravo charlie\n  delta" `readSame`
+      "((alpha bravo charlie) delta)"
+  "alpha\n  bravo\n  charlie" `readSame`
+      "(alpha bravo charlie)"
+  "alpha\n  bravo charlie" `readSame`
+      "(alpha (bravo charlie))"
+  "alpha\n  12\n  14" `readSame`
+      "(alpha 12 14)"
+  "alpha\n  bravo\n    charlie" `readSame`
+      "(alpha (bravo charlie))"
+  "alpha\n  bravo charlie\n    delta" `readSame`
+      "(alpha ((bravo charlie) delta))"
+  "alpha\n  bravo\n    charlie delta" `readSame`
+      "(alpha (bravo (charlie delta)))"
+  "alpha\n  bravo charlie\n    delta echo" `readSame`
+      "(alpha ((bravo charlie) (delta echo)))"
+  "alpha bravo\n  charlie delta\n    echo foxtrot" `readSame`
+      "((alpha bravo) ((charlie delta) (echo foxtrot)))"
+  "alpha\n  ()" `readSame`
+      "(alpha ())"
+  "alpha\n  (bravo)" `readSame`
+      "(alpha (bravo))"
+  "alpha\n  (\nbravo)" `readSame`
+      "(alpha (bravo))"
+  "alpha\n  (bravo\n)" `readSame`
+      "(alpha (bravo))"
+  "alpha\n  {\nbravo}" `readSame`
+      "(alpha (dict bravo))"
 
 readerTests :: Test
 readerTests = $testGroupGenerator
