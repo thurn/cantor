@@ -14,7 +14,7 @@ module Reader (
 import           Data.List          (intercalate)
 import           Datatypes
 import           Text.Parsec
-import           Text.Parsec.Indent (runIndent, withBlock, indentParens)
+import           Text.Parsec.Indent (runIndent, withBlock, checkIndent)
 import           Token
 
 -- | Parses a string and returns a list of top-level Forms present in the
@@ -46,10 +46,11 @@ showForm (Sexp s) = "(" ++ unwords (map showForm s) ++ ")"
 -- ParseError.
 runParse :: InputName -> CantorParser a -> String -> Either ParseError a
 runParse source aParser input = runIndent source run
-  where run = runParserT aParser () source input
+  where run = runParserT aParser NoIgnoreNewlines source input
 
 indentedForm :: CantorParser Form
 indentedForm = do
+  checkIndent
   sexp <- withBlock makeSexp readLine indentedForm
   return sexp
   where makeSexp first []   = first
@@ -81,8 +82,11 @@ readBalanced :: SkipNewlines ->
              CantorParser Form
 readBalanced skipNewlines left right fn = do
   char left
+  newlineStrategy <- getState
+  putState IgnoreNewlines -- Until the closing delimiter, ignore newlines
   skipSpaces SkipNewlines
   sexp <- many (readForm SkipNewlines)
   char right
+  putState newlineStrategy -- Restore previous newline strategy
   skipSpaces skipNewlines
   return $ Sexp $ fn sexp

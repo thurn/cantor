@@ -23,5 +23,7 @@ type ReadError = Parsec.ParseError
 -- | The name of a parser input
 type InputName = String
 
+data NewlineStrategy = IgnoreNewlines | NoIgnoreNewlines
+
 -- | The type for Cantor parsers (indentation-sensitive)
-type CantorParser a = Parsec.ParsecT String () (State.State Parsec.SourcePos) a
+type CantorParser a = Parsec.ParsecT String NewlineStrategy (State.State Parsec.SourcePos) a

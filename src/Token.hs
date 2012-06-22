@@ -40,9 +40,16 @@ data SkipNewlines = SkipNewlines | SignificantNewlines
 
 -- | Parser which skips whitespace. Only skips newlines if 'True' is passed as
 -- the argument.
+-- skipSpaces :: SkipNewlines -> CantorParser String
+-- skipSpaces SkipNewlines        = many (oneOf " \t\n")
+-- skipSpaces SignificantNewlines = many (oneOf " \t")
+
 skipSpaces :: SkipNewlines -> CantorParser String
-skipSpaces SkipNewlines        = many (oneOf " \t\n")
-skipSpaces SignificantNewlines = many (oneOf " \t")
+skipSpaces _ = do
+  newlineStrategy <- getState
+  many $ oneOf $ skipped newlineStrategy
+  where skipped IgnoreNewlines   = " \t\n"
+        skipped NoIgnoreNewlines = " \t"
 
 -- | Symbols that may legally occur as an identifier as long as they are not the
 -- first character.

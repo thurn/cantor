@@ -13,7 +13,8 @@ import           Test.Framework                       (Test)
 import           Test.Framework.Providers.HUnit       (testCase)
 import           Test.Framework.Providers.QuickCheck2 (testProperty)
 import           Test.Framework.TH                    (testGroupGenerator)
-import           Test.HUnit                           (Assertion, assertEqual, assertFailure)
+import           Test.HUnit                           (Assertion, assertEqual,
+                                                      assertFailure, assertBool)
 import qualified Test.QuickCheck                      as QuickCheck
 
 instance QuickCheck.Arbitrary Form where
@@ -175,6 +176,12 @@ readSame :: String -> String -> Assertion
 x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
   where rightRead = right . (readForms "")
 
+assertParseError :: String -> Assertion
+assertParseError input = assertBool "Parse expected to fail" parse
+  where parse = case readForms "" input of
+          (Left _)  -> True
+          (Right _) -> False
+
 case_indent :: Assertion
 case_indent = do
   "alpha\n  bravo" `readSame`
@@ -209,6 +216,16 @@ case_indent = do
       "(alpha (bravo))"
   "alpha\n  {\nbravo}" `readSame`
       "(alpha (dict bravo))"
+  "alpha\n  (bravo\n)\n  charlie" `readSame`
+      "(alpha (bravo) charlie)"
+  "alpha\n  (bravo\n  )\n  charlie" `readSame`
+      "(alpha (bravo) charlie)"
+  "alpha\n  (bravo\n    )\n  charlie" `readSame`
+      "(alpha (bravo) charlie)"
+
+case_indent_error :: Assertion
+case_indent_error = do
+  assertParseError "alpha\n    bravo\n  charlie"
 
 readerTests :: Test
 readerTests = $testGroupGenerator
