@@ -27,7 +27,7 @@ module Token (
   intOrFloat,
   initialHyphen,
   skipSpaces,
-  SkipNewlines(..)
+  operator,
 ) where
 
 import           Datatypes
@@ -36,16 +36,8 @@ import           Text.Parsec
 import qualified Data.Char        as Char
 import qualified Text.Parsec.Char as Parsec.Char
 
-data SkipNewlines = SkipNewlines | SignificantNewlines
-
--- | Parser which skips whitespace. Only skips newlines if 'True' is passed as
--- the argument.
--- skipSpaces :: SkipNewlines -> CantorParser String
--- skipSpaces SkipNewlines        = many (oneOf " \t\n")
--- skipSpaces SignificantNewlines = many (oneOf " \t")
-
-skipSpaces :: SkipNewlines -> CantorParser String
-skipSpaces _ = do
+skipSpaces :: CantorParser String
+skipSpaces = do
   newlineStrategy <- getState
   many $ oneOf $ skipped newlineStrategy
   where skipped IgnoreNewlines   = " \t\n"
@@ -57,13 +49,25 @@ identSymbols :: String
 identSymbols = "!%&*-+=\\|?/<>"
 
 -- | Parses an identifier
-identifier :: SkipNewlines -> CantorParser Form
-identifier skipNewlines = do
-  c  <- letter
+identifier :: CantorParser Form
+identifier = do
+  c  <- letter <?> "identifier"
   cs <- many (alphaNum <|> oneOf identSymbols)
-  skipSpaces skipNewlines
+  skipSpaces
   return $ Ident $ c:cs
+  
+-- | Symbols that may occur as part of an operator
+opSymbols :: String
+opSymbols = "!%&*-+=\\|?/<>"
 
+-- | Creates a parser which recognizes the operator with the specified name.
+operator :: String -> CantorParser (Form -> Form -> Form)
+operator name = try $ do
+  string name
+  notFollowedBy $ (oneOf opSymbols <|> alphaNum)
+  skipSpaces
+  return $ Binop name False
+  
 exponentPart :: CantorParser String
 exponentPart = do
     char 'e'
@@ -82,17 +86,17 @@ fraction s = do
 
 -- | Parses either an Int or a Float, depending on whether a '.' character is
 -- found in the stream.
-intOrFloat :: SkipNewlines -> CantorParser Form
-intOrFloat skipNewlines = do
-  int  <- many1 digit
+intOrFloat :: CantorParser Form
+intOrFloat = do
+  int  <- many1 digit <?> "number"
   form <- option (Int (read int)) (fraction int)
-  skipSpaces skipNewlines
+  skipSpaces 
   return form
 
-initialHyphen :: SkipNewlines -> CantorParser Form
-initialHyphen skipNewlines = do
-  char '-'
-  num <- intOrFloat skipNewlines
+initialHyphen :: CantorParser Form
+initialHyphen = do
+  char '-' <?> ""
+  num <- intOrFloat
   return $ case num of
     Int i   -> Int $ negate i
     Float f -> Float $ negate f
@@ -107,10 +111,10 @@ number base baseDigit = do
   let n = foldl (\x d -> base*x + toInteger (Char.digitToInt d)) 0 digits
   seq n (return n)
 
-stringLiteral :: SkipNewlines -> CantorParser Form
-stringLiteral skipNewlines = do
-  str <- between (char '"') (char '"') (many stringChar)
-  skipSpaces skipNewlines
+stringLiteral :: CantorParser Form
+stringLiteral = do
+  str <- between (char '"') (char '"') (many stringChar) <?> "string literal"
+  skipSpaces
   return $ Str $ foldr (maybe id (:)) "" str
 
 stringChar :: CantorParser (Maybe Char)

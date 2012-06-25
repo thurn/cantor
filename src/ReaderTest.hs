@@ -43,26 +43,49 @@ arbitraryString = do
   s <- QuickCheck.arbitrary
   return $ show (s :: String)
 
+arbitraryBinop :: QuickCheck.Gen Form
+arbitraryBinop = do
+  str <- QuickCheck.elements [
+    "*", "/", "%", "+", "<", ">", "<=", ">=", "==", "!=", "&&", "||", "<<",
+    ">>", "|>", "<|", "=", "+=", "*=", "/=", "|=", "&=", "|"]
+  x <- form
+  y <- form
+  return $ Binop str False x y
+  where form = QuickCheck.frequency [
+            (90, arbitraryAtom),
+            (10, QuickCheck.arbitrary)
+          ]
+
 arbitraryForm :: Int -> QuickCheck.Gen Form
 arbitraryForm 0 = arbitraryAtom
 arbitraryForm n = QuickCheck.frequency [
-  (15, arbitraryAtom),
-  (10, listOfSize 1),
-  (5, listOfSize 2),
-  (1, listOfSize 3),
-  (1, listOfSize 4),
-  (1, listOfSize 5),
-  (1, listOfSize 0)
+    (15, arbitraryAtom),
+    (10, listOfSize 1),
+    (5, listOfSize 2),
+    (5, arbitraryBinop),
+    (1, listOfSize 3),
+    (1, listOfSize 4),
+    (1, listOfSize 5),
+    (1, listOfSize 0)
   ]
   where nextRandom = arbitraryForm (n `div` 2)
         listOfSize size = liftM Sexp $ QuickCheck.vectorOf size nextRandom
+
+falsifyBinops :: [Form] -> [Form]
+falsifyBinops xs = map fb xs
+  where fb (Binop n True l r) = Binop n False (fb l) (fb r)
+        fb (Sexp ys) = Sexp $ falsifyBinops ys
+        fb (Exp ys) = Exp $ falsifyBinops ys
+        fb (Map ys) = Map $ falsifyBinops ys
+        fb (Vector ys) = Vector $ falsifyBinops ys
+        fb x = x
 
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
 readAndCheck :: String -> ([Form] -> Bool) -> Bool
 readAndCheck input predicate = case readForms "" input of
   Left _ -> False
-  Right forms -> predicate forms
+  Right forms -> predicate (falsifyBinops forms)
 
 -- | Reads forms from the input and checks whether the parse succeeded,
 -- returning (parseSucceeded XNOR shouldSucceed)
@@ -140,19 +163,16 @@ arbitraryBetween c1 c2 = QuickCheck.oneof $ map generate [0 .. 4]
   where generate n = do forms <- QuickCheck.vectorOf n QuickCheck.arbitrary
                         return ([c1] ++ showForms forms ++ [c2])
 
-sexpHeadedBy :: Form -> [Form] -> Bool
-sexpHeadedBy form (Sexp (first:_):_) = first == form
-sexpHeadedBy _ _                     = False
-
 prop_validSyntax :: ValidSyntax -> Bool
-prop_validSyntax (BalancedString s) =
-  readWithOutcome True s
-prop_validSyntax (ArbitraryIdent s) =
-  readAndCheck s (== [Ident s])
-prop_validSyntax (ArbitraryVector s) =
-  readAndCheck s (sexpHeadedBy (Ident "vector"))
-prop_validSyntax (ArbitraryDict s) =
-  readAndCheck s (sexpHeadedBy (Ident "dict"))
+prop_validSyntax (BalancedString s) = readWithOutcome True s
+prop_validSyntax (ArbitraryIdent s) = readAndCheck s (== [Ident s])
+prop_validSyntax (ArbitraryVector s) = readAndCheck s isVector
+  where isVector [Vector _] = True
+        isVector _          = False
+prop_validSyntax (ArbitraryDict s) = readAndCheck s isMap
+  where isMap [Map _] = True
+        isMap _       = False
+
 
 readOne :: String -> Form -> Assertion
 readOne input expected = case readForms "" input of
@@ -163,14 +183,15 @@ readOne input expected = case readForms "" input of
 
 case_vector :: Assertion
 case_vector = do
-  readOne "[]" $ Sexp [Ident "vector"]
-  readOne "[1]" $ Sexp [Ident "vector", Int 1]
+  readOne "[]" $ Vector []
+  readOne "[1]" $ Vector [Int 1]
+  readOne "[1 2]" $ Vector [Int 1, Int 2]
 
 case_dict :: Assertion
-
 case_dict = do
-  readOne "{}" $ Sexp [Ident "dict"]
-  readOne "{1}" $ Sexp [Ident "dict", Int 1]
+  readOne "{}" $ Map []
+  readOne "{1}" $ Map [Int 1]
+  readOne "{1 2}" $ Map [Int 1, Int 2]
 
 readSame :: String -> String -> Assertion
 x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
@@ -215,7 +236,7 @@ case_indent = do
   "alpha\n  (bravo\n)" `readSame`
       "(alpha (bravo))"
   "alpha\n  {\nbravo}" `readSame`
-      "(alpha (dict bravo))"
+      "(alpha {bravo})"
   "alpha\n  (bravo\n)\n  charlie" `readSame`
       "(alpha (bravo) charlie)"
   "alpha\n  (bravo\n  )\n  charlie" `readSame`
@@ -226,6 +247,27 @@ case_indent = do
 case_indent_error :: Assertion
 case_indent_error = do
   assertParseError "alpha\n    bravo\n  charlie"
+
+case_parens :: Assertion
+case_parens = do
+  readOne "(foo)" $ Sexp [Ident "foo"]
+  readOne "(foo bar)" $ Sexp [Ident "foo",Ident "bar"]
+  readOne "((foo))" $ Sexp [Sexp [Ident "foo"]]
+  readOne "((foo bar))" $ Sexp [Sexp [Ident "foo",Ident "bar"]]
+  readOne "(foo + bar)" $ Binop "+" True (Ident "foo") (Ident "bar")
+  readOne "((foo + bar))" $ Sexp [Binop "+" True (Ident "foo") (Ident "bar")]
+
+case_precedence :: Assertion
+case_precedence = do  
+  readOne "1 + 1 * 2" $ Binop "+" False (Int 1)
+                            (Binop "*" False (Int 1) (Int 2))
+  readOne "1 * 1 + 2" $ Binop "+" False
+                            (Binop "*" False (Int 1) (Int 1)) (Int 2)
+  readOne "1 * 1 * 2" $ Binop "*" False
+                            (Binop "*" False (Int 1) (Int 1)) (Int 2)
+  readOne "print 1 + print 2" $ Binop "+" False
+                                    (Sexp [Ident "print",Int 1])
+                                    (Sexp [Ident "print",Int 2])
 
 readerTests :: Test
 readerTests = $testGroupGenerator
