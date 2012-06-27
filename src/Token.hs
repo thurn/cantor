@@ -79,6 +79,7 @@ highPrecedenceOperator :: String -> CantorParser (Form -> Form -> Form)
 highPrecedenceOperator name = try $ do
   string name
   notFollowedBy $ (oneOf opSymbols)
+  skipSpaces
   return $ Binop name
 
 -- | Parses the exponent part of a float in scientific notation.  

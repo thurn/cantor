@@ -47,7 +47,7 @@ arbitraryBinop :: QuickCheck.Gen Form
 arbitraryBinop = do
   str <- QuickCheck.elements [
     "*", "/", "%", "+", "<", ">", "<=", ">=", "==", "!=", "&&", "||", "<<",
-    ">>", "|>", "<|", "=", "+=", "*=", "/=", "|=", "&=", "|"]
+    ">>", "|>", "<|", "=", "+=", "*=", "/=", "|=", "&=", "|", "."]
   x <- form
   y <- form
   return $ Binop str x y
@@ -238,11 +238,6 @@ case_indent = do
 case_indent_error :: Assertion
 case_indent_error = assertParseError "alpha\n    bravo\n  charlie"
 
-case_operator_error :: Assertion
-case_operator_error = do
-  assertParseError "foo .bar"
-  assertParseError "foo. bar"
-
 case_parens :: Assertion
 case_parens = do
   readOne "(foo)" $ Sexp [Ident "foo"]
@@ -263,6 +258,8 @@ case_precedence = do
   readOne "print 1 + print 2" $
       Binop "+" (Sexp [Ident "print",Int 1]) (Sexp [Ident "print",Int 2])
   readOne "foo.bar" $ Binop "." (Ident "foo") (Ident "bar")
+  readOne "foo. bar" $ Binop "." (Ident "foo") (Ident "bar")
+  readOne "foo .bar" $ Binop "." (Ident "foo") (Ident "bar")
   readOne "foo.bar.baz + 2" $
       Binop "+"
           (Binop "." (Binop "." (Ident "foo") (Ident "bar")) (Ident "baz"))

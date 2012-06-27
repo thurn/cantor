@@ -142,21 +142,13 @@ operatorTable = [
     [leftInfix "|"]
   ]
 
-readFormKeepWhitespace :: CantorParser Form
-readFormKeepWhitespace = do
-  newlineStrategy <- getState
-  putState NoSkipWhitespace -- Don't skip any whitespace
-  form <- readForm
-  putState newlineStrategy -- Restore previous newline strategy
-  return form
-
 highPrecedenceTable :: CantorOperatorTable
 highPrecedenceTable = [
     [Infix (highPrecedenceOperator ".") AssocLeft]
   ]
 
 highPrecedenceExpression :: CantorParser Form
-highPrecedenceExpression = buildExpressionParser highPrecedenceTable readFormKeepWhitespace
+highPrecedenceExpression = buildExpressionParser highPrecedenceTable readForm
 
 highPrecedenceExpression' :: CantorParser Form
 highPrecedenceExpression' = do
