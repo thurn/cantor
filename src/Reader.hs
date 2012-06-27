@@ -45,8 +45,12 @@ showForm (Str s) = show s
 showForm (Sexp s) = "(" ++ unwords (map showForm s) ++ ")"
 showForm (Map s) = "{" ++ unwords (map showForm s) ++ "}"
 showForm (Vector s) = "[" ++ unwords (map showForm s) ++ "]"
-showForm (Binop s left right) = "(" ++ (showForm left) ++ " " ++ s ++ " " ++
-                                  (showForm right) ++ ")"
+showForm (Binop s left right) = showBinop s (showForm left) (showForm right)
+
+showBinop :: String -> String -> String -> String
+showBinop name left right
+    | name `elem` ["."] = left ++ name ++ right
+    | otherwise         = "(" ++ left ++ " " ++ name ++ " " ++ right ++ ")"
 
 -- | Uses the specified parser to parse a string, returning the result or a
 -- ParseError.
@@ -58,8 +62,7 @@ runParse source aParser input = runIndent source run
 indentedForm :: CantorParser Form
 indentedForm = do
   checkIndent
-  sexp <- withBlock makeSexp readLine indentedForm
-  return sexp
+  withBlock makeSexp readLine indentedForm
   where makeSexp first []   = first
         makeSexp first rest = Sexp $ first : rest
 
@@ -75,12 +78,12 @@ readLine = do
 
 -- | Parses a single Form from the input stream.
 readForm :: CantorParser Form
-readForm = identifier    <|>
-           intOrFloat    <|>
-           initialHyphen <|>
-           stringLiteral <|>
+readForm = identifier        <|>
+           intOrFloat        <|>
+           initialHyphen     <|>
+           stringLiteral     <|>
            readParenthesized <|>
-           readVector    <|>
+           readVector        <|>
            readMap
 
 -- | Makes a parser which looks for an opening delimiter, then applies the
@@ -101,26 +104,30 @@ readBetween left right name parser = do
   skipSpaces
   return parsed
 
--- | Reads a vector literal
+-- | Reads a vector literal.
 readVector :: CantorParser Form
 readVector = fmap Vector $ readBetween '[' ']' "vector literal" $ many readForm
 
--- | Reads a map literal
+-- | Reads a map literal.
 readMap :: CantorParser Form
 readMap = fmap Map $ readBetween '{' '}' "map literal" $ many readForm
 
 -- | Reads a parenthesized expression. If a single form is present in such an
 -- expression, it's treated as a no-arg function invokation. If multiple forms
--- are present, it's treated as a grouping expression
+-- are present, it's treated as a grouping expression.
 readParenthesized :: CantorParser Form
 readParenthesized = try singleForm <|> multipleForms
   where readParens    = readBetween '(' ')' "expression"
         singleForm    = fmap (Sexp . return) $ readParens readForm
         multipleForms = readParens $ option (Sexp []) expression
 
+-- | Creates an operator parser for an infix, left associative operator with
+-- the specified name.
 leftInfix :: String -> CantorOperator
 leftInfix name = Infix (operator name) AssocLeft
 
+-- | Table of cantor operators, ordered from highest to lowest precedence. Note
+-- that function invokation has higher precedence than any of these operators.
 operatorTable :: CantorOperatorTable
 operatorTable = [
     [leftInfix "*", leftInfix "/", leftInfix "%"],
@@ -135,12 +142,39 @@ operatorTable = [
     [leftInfix "|"]
   ]
 
-makeSexp :: CantorParser Form
-makeSexp = do
-  forms <- many1 readForm
+readFormKeepWhitespace :: CantorParser Form
+readFormKeepWhitespace = do
+  newlineStrategy <- getState
+  putState NoSkipWhitespace -- Don't skip any whitespace
+  form <- readForm
+  putState newlineStrategy -- Restore previous newline strategy
+  return form
+
+highPrecedenceTable :: CantorOperatorTable
+highPrecedenceTable = [
+    [Infix (highPrecedenceOperator ".") AssocLeft]
+  ]
+
+highPrecedenceExpression :: CantorParser Form
+highPrecedenceExpression = buildExpressionParser highPrecedenceTable readFormKeepWhitespace
+
+highPrecedenceExpression' :: CantorParser Form
+highPrecedenceExpression' = do
+  expr <- highPrecedenceExpression
+  skipSpaces
+  return expr
+
+-- | Parser which reads one or more forms. If multiple forms are read, this is
+-- treated as a function call.
+functionCall :: CantorParser Form
+functionCall = do
+  forms <- many1 highPrecedenceExpression'
   return $ sexpify forms
   where sexpify [form] = form
         sexpify forms  = Sexp forms
 
+-- | An operator precedence parser which correctly handles the operators in
+-- operatorTable as well as the convention that multiple forms separated by
+-- whitespace are a function call.
 expression :: CantorParser Form
-expression = buildExpressionParser operatorTable makeSexp <?> "expression"
+expression = buildExpressionParser operatorTable functionCall <?> "expression"

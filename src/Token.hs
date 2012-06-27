@@ -28,6 +28,7 @@ module Token (
   initialHyphen,
   skipSpaces,
   operator,
+  highPrecedenceOperator
 ) where
 
 import           Datatypes
@@ -36,12 +37,15 @@ import           Text.Parsec
 import qualified Data.Char        as Char
 import qualified Text.Parsec.Char as Parsec.Char
 
+-- | Skips whitespace. Based on the current "newline strategy" state, can either
+-- skip newlines as well or treat newlines as significant.
 skipSpaces :: CantorParser String
 skipSpaces = do
   newlineStrategy <- getState
   many $ oneOf $ skipped newlineStrategy
   where skipped IgnoreNewlines   = " \t\n"
         skipped NoIgnoreNewlines = " \t"
+        skipped NoSkipWhitespace = ""
 
 -- | Symbols that may legally occur as an identifier as long as they are not the
 -- first character.
@@ -67,7 +71,17 @@ operator name = try $ do
   notFollowedBy $ (oneOf opSymbols <|> alphaNum)
   skipSpaces
   return $ Binop name
-  
+
+-- | Creates a parser which recognizes the operator with the specified name,
+-- designed to be used to parse operators which are higher precedence than
+-- function application.
+highPrecedenceOperator :: String -> CantorParser (Form -> Form -> Form)
+highPrecedenceOperator name = try $ do
+  string name
+  notFollowedBy $ (oneOf opSymbols)
+  return $ Binop name
+
+-- | Parses the exponent part of a float in scientific notation.  
 exponentPart :: CantorParser String
 exponentPart = do
     char 'e'
@@ -93,6 +107,8 @@ intOrFloat = do
   skipSpaces 
   return form
 
+-- | Handles a hyphen at the start of a form, which can be the start of a
+-- number literal or an operator.
 initialHyphen :: CantorParser Form
 initialHyphen = do
   char '-' <?> ""

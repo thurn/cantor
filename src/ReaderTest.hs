@@ -186,7 +186,7 @@ case_dict = do
 
 readSame :: String -> String -> Assertion
 x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
-  where rightRead = right . (readForms "")
+  where rightRead = right . readForms ""
 
 assertParseError :: String -> Assertion
 assertParseError input = assertBool "Parse expected to fail" parse
@@ -236,8 +236,12 @@ case_indent = do
       "(alpha (bravo) charlie)"
 
 case_indent_error :: Assertion
-case_indent_error = do
-  assertParseError "alpha\n    bravo\n  charlie"
+case_indent_error = assertParseError "alpha\n    bravo\n  charlie"
+
+case_operator_error :: Assertion
+case_operator_error = do
+  assertParseError "foo .bar"
+  assertParseError "foo. bar"
 
 case_parens :: Assertion
 case_parens = do
@@ -250,15 +254,22 @@ case_parens = do
 
 case_precedence :: Assertion
 case_precedence = do  
-  readOne "1 + 1 * 2" $ Binop "+" (Int 1)
-                            (Binop "*" (Int 1) (Int 2))
-  readOne "1 * 1 + 2" $ Binop "+"
-                            (Binop "*" (Int 1) (Int 1)) (Int 2)
-  readOne "1 * 1 * 2" $ Binop "*"
-                            (Binop "*" (Int 1) (Int 1)) (Int 2)
-  readOne "print 1 + print 2" $ Binop "+"
-                                    (Sexp [Ident "print",Int 1])
-                                    (Sexp [Ident "print",Int 2])
+  readOne "1 + 1 * 2" $
+      Binop "+" (Int 1) (Binop "*" (Int 1) (Int 2))
+  readOne "1 * 1 + 2" $
+      Binop "+" (Binop "*" (Int 1) (Int 1)) (Int 2)
+  readOne "1 * 1 * 2" $
+      Binop "*" (Binop "*" (Int 1) (Int 1)) (Int 2)
+  readOne "print 1 + print 2" $
+      Binop "+" (Sexp [Ident "print",Int 1]) (Sexp [Ident "print",Int 2])
+  readOne "foo.bar" $ Binop "." (Ident "foo") (Ident "bar")
+  readOne "foo.bar.baz + 2" $
+      Binop "+"
+          (Binop "." (Binop "." (Ident "foo") (Ident "bar")) (Ident "baz"))
+          (Int 2)
+  readOne "print foo.bar.baz" $
+      Sexp [Ident "print",
+            Binop "." (Binop "." (Ident "foo") (Ident "bar")) (Ident "baz")]
 
 readerTests :: Test
 readerTests = $testGroupGenerator

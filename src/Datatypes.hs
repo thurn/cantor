@@ -27,9 +27,9 @@ type ReadError = Parsec.ParseError
 type InputName = String
 
 -- | An approach for dealing with newlines encountered during parsing, whether
--- they should be ignored (like spaces and tabs) or treated as significant
--- syntax.
-data NewlineStrategy = IgnoreNewlines | NoIgnoreNewlines
+-- they should be ignored (like spaces and tabs), treated as significant
+-- syntax, or whether no whitespace should be skipped at all.
+data NewlineStrategy = IgnoreNewlines | NoIgnoreNewlines | NoSkipWhitespace
 
 -- | The type for Cantor parsers (indentation-sensitive)
 type CantorParser a = Parsec.ParsecT
@@ -38,10 +38,12 @@ type CantorParser a = Parsec.ParsecT
                         (State.State Parsec.SourcePos)
                         a
 
+-- | The type for Cantor operator parsers
 type CantorOperator = Expr.Operator
                         String
                         NewlineStrategy
                         (State.State Parsec.SourcePos)
                         Form
 
+-- | The type for a table of Cantor operators
 type CantorOperatorTable = [[CantorOperator]]
