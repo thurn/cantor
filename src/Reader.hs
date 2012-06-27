@@ -116,7 +116,7 @@ readParenthesized :: CantorParser Form
 readParenthesized = try singleForm <|> multipleForms
   where readParens    = readBetween '(' ')' "expression"
         singleForm    = fmap (Sexp . return) $ readParens readForm
-        multipleForms = readParens $ expression
+        multipleForms = readParens $ option (Sexp []) expression
 
 leftInfix :: String -> CantorOperator
 leftInfix name = Infix (operator name) AssocLeft
