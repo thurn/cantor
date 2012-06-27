@@ -15,8 +15,7 @@ data Form = Int Integer
           | Str String
           | Ident String
           | Sexp [Form]
-          | Binop String Bool Form Form
-          | Exp [Form]
+          | Binop String Form Form
           | Map [Form]
           | Vector [Form]
             deriving (Eq, Show, Read)

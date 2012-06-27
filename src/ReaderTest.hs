@@ -50,7 +50,7 @@ arbitraryBinop = do
     ">>", "|>", "<|", "=", "+=", "*=", "/=", "|=", "&=", "|"]
   x <- form
   y <- form
-  return $ Binop str False x y
+  return $ Binop str x y
   where form = QuickCheck.frequency [
             (90, arbitraryAtom),
             (10, QuickCheck.arbitrary)
@@ -71,21 +71,12 @@ arbitraryForm n = QuickCheck.frequency [
   where nextRandom = arbitraryForm (n `div` 2)
         listOfSize size = liftM Sexp $ QuickCheck.vectorOf size nextRandom
 
-falsifyBinops :: [Form] -> [Form]
-falsifyBinops xs = map fb xs
-  where fb (Binop n True l r) = Binop n False (fb l) (fb r)
-        fb (Sexp ys) = Sexp $ falsifyBinops ys
-        fb (Exp ys) = Exp $ falsifyBinops ys
-        fb (Map ys) = Map $ falsifyBinops ys
-        fb (Vector ys) = Vector $ falsifyBinops ys
-        fb x = x
-
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
 readAndCheck :: String -> ([Form] -> Bool) -> Bool
 readAndCheck input predicate = case readForms "" input of
   Left _ -> False
-  Right forms -> predicate (falsifyBinops forms)
+  Right forms -> predicate forms
 
 -- | Reads forms from the input and checks whether the parse succeeded,
 -- returning (parseSucceeded XNOR shouldSucceed)
@@ -254,18 +245,18 @@ case_parens = do
   readOne "(foo bar)" $ Sexp [Ident "foo",Ident "bar"]
   readOne "((foo))" $ Sexp [Sexp [Ident "foo"]]
   readOne "((foo bar))" $ Sexp [Sexp [Ident "foo",Ident "bar"]]
-  readOne "(foo + bar)" $ Binop "+" True (Ident "foo") (Ident "bar")
-  readOne "((foo + bar))" $ Sexp [Binop "+" True (Ident "foo") (Ident "bar")]
+  readOne "(foo + bar)" $ Binop "+" (Ident "foo") (Ident "bar")
+  readOne "((foo + bar))" $ Sexp [Binop "+" (Ident "foo") (Ident "bar")]
 
 case_precedence :: Assertion
 case_precedence = do  
-  readOne "1 + 1 * 2" $ Binop "+" False (Int 1)
-                            (Binop "*" False (Int 1) (Int 2))
-  readOne "1 * 1 + 2" $ Binop "+" False
-                            (Binop "*" False (Int 1) (Int 1)) (Int 2)
-  readOne "1 * 1 * 2" $ Binop "*" False
-                            (Binop "*" False (Int 1) (Int 1)) (Int 2)
-  readOne "print 1 + print 2" $ Binop "+" False
+  readOne "1 + 1 * 2" $ Binop "+" (Int 1)
+                            (Binop "*" (Int 1) (Int 2))
+  readOne "1 * 1 + 2" $ Binop "+"
+                            (Binop "*" (Int 1) (Int 1)) (Int 2)
+  readOne "1 * 1 * 2" $ Binop "*"
+                            (Binop "*" (Int 1) (Int 1)) (Int 2)
+  readOne "print 1 + print 2" $ Binop "+"
                                     (Sexp [Ident "print",Int 1])
                                     (Sexp [Ident "print",Int 2])
 

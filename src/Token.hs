@@ -66,7 +66,7 @@ operator name = try $ do
   string name
   notFollowedBy $ (oneOf opSymbols <|> alphaNum)
   skipSpaces
-  return $ Binop name False
+  return $ Binop name
   
 exponentPart :: CantorParser String
 exponentPart = do
