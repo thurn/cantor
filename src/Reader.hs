@@ -49,7 +49,7 @@ showForm (Binop s left right) = showBinop s (showForm left) (showForm right)
 
 showBinop :: String -> String -> String -> String
 showBinop name left right
-    | name `elem` ["."] = left ++ name ++ right
+    | name `elem` ["."] = left ++ " " ++ name ++ " " ++ right
     | otherwise         = "(" ++ left ++ " " ++ name ++ " " ++ right ++ ")"
 
 -- | Uses the specified parser to parse a string, returning the result or a
@@ -106,11 +106,13 @@ readBetween left right name parser = do
 
 -- | Reads a vector literal.
 readVector :: CantorParser Form
-readVector = fmap Vector $ readBetween '[' ']' "vector literal" $ many readForm
+readVector = fmap Vector $
+    readBetween '[' ']' "vector literal" $ many complexForm
 
 -- | Reads a map literal.
 readMap :: CantorParser Form
-readMap = fmap Map $ readBetween '{' '}' "map literal" $ many readForm
+readMap = fmap Map $
+    readBetween '{' '}' "map literal" $ many complexForm
 
 -- | Reads a parenthesized expression. If a single form is present in such an
 -- expression, it's treated as a no-arg function invokation. If multiple forms
@@ -118,7 +120,7 @@ readMap = fmap Map $ readBetween '{' '}' "map literal" $ many readForm
 readParenthesized :: CantorParser Form
 readParenthesized = try singleForm <|> multipleForms
   where readParens    = readBetween '(' ')' "expression"
-        singleForm    = fmap (Sexp . return) $ readParens readForm
+        singleForm    = fmap (Sexp . return) $ readParens complexForm
         multipleForms = readParens $ option (Sexp []) expression
 
 -- | Creates an operator parser for an infix, left associative operator with
@@ -142,25 +144,24 @@ operatorTable = [
     [leftInfix "|"]
   ]
 
-highPrecedenceTable :: CantorOperatorTable
-highPrecedenceTable = [
-    [Infix (highPrecedenceOperator ".") AssocLeft]
-  ]
-
-highPrecedenceExpression :: CantorParser Form
-highPrecedenceExpression = buildExpressionParser highPrecedenceTable readForm
-
-highPrecedenceExpression' :: CantorParser Form
-highPrecedenceExpression' = do
-  expr <- highPrecedenceExpression
+complexForm :: CantorParser Form
+complexForm = do
+  expr <- readForm
   skipSpaces
-  return expr
+  methodCalls <- many methodCall
+  return $ Sexp (expr : methodCalls)
+  where methodCall = do
+          string "."
+          skipSpaces
+          i <- identifier
+          skipSpaces
+          return i
 
 -- | Parser which reads one or more forms. If multiple forms are read, this is
 -- treated as a function call.
 functionCall :: CantorParser Form
 functionCall = do
-  forms <- many1 highPrecedenceExpression'
+  forms <- many1 complexForm
   return $ sexpify forms
   where sexpify [form] = form
         sexpify forms  = Sexp forms

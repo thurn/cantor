@@ -18,6 +18,7 @@ data Form = Int Integer
           | Binop String Form Form
           | Map [Form]
           | Vector [Form]
+          | Dot Form String
             deriving (Eq, Show, Read)
             
 -- | Indicates a failure during parsing.

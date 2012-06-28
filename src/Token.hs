@@ -28,7 +28,6 @@ module Token (
   initialHyphen,
   skipSpaces,
   operator,
-  highPrecedenceOperator
 ) where
 
 import           Datatypes
@@ -69,16 +68,6 @@ operator :: String -> CantorParser (Form -> Form -> Form)
 operator name = try $ do
   string name
   notFollowedBy $ (oneOf opSymbols <|> alphaNum)
-  skipSpaces
-  return $ Binop name
-
--- | Creates a parser which recognizes the operator with the specified name,
--- designed to be used to parse operators which are higher precedence than
--- function application.
-highPrecedenceOperator :: String -> CantorParser (Form -> Form -> Form)
-highPrecedenceOperator name = try $ do
-  string name
-  notFollowedBy $ (oneOf opSymbols)
   skipSpaces
   return $ Binop name
 
