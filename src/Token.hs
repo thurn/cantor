@@ -93,9 +93,10 @@ fraction s = do
 intOrFloat :: CantorParser Form
 intOrFloat = do
   int  <- many1 digit <?> "number"
-  form <- option (Int (read int)) (fraction int)
+  form <- try (fraction int) <|> returnInt int
   skipSpaces 
   return form
+  where returnInt i = return $ Int (read i)
 
 -- | Handles a hyphen at the start of a form, which can be the start of a
 -- number literal or an operator.

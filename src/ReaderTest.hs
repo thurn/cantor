@@ -14,20 +14,21 @@ import           Test.Framework.Providers.HUnit       (testCase)
 import           Test.Framework.Providers.QuickCheck2 (testProperty)
 import           Test.Framework.TH                    (testGroupGenerator)
 import           Test.HUnit                           (Assertion, assertEqual,
-                                                      assertFailure, assertBool)
-import qualified Test.QuickCheck                      as QuickCheck
+    assertFailure, assertBool)
+import           Test.QuickCheck                      (Arbitrary, Gen, sized,
+    oneof, arbitrary, frequency, listOf, elements, vectorOf, suchThat)
 
-instance QuickCheck.Arbitrary Form where
-  arbitrary = QuickCheck.sized arbitraryForm
+instance Arbitrary Form where
+  arbitrary = sized arbitraryForm
 
 right :: Either a b -> b
 right (Left _) = error "Expected Right"
 right (Right x) = x
 
-arbitraryAtom :: QuickCheck.Gen Form
-arbitraryAtom = QuickCheck.oneof [
-  liftM Int QuickCheck.arbitrary,
-  liftM Float QuickCheck.arbitrary,
+arbitraryAtom :: Gen Form
+arbitraryAtom = oneof [
+  liftM Int arbitrary,
+  liftM Float arbitrary,
   liftM Str arbitraryString,
   liftM Ident arbitraryIdent
   ]
@@ -38,50 +39,60 @@ identInitialChars = ['a' .. 'z'] ++ ['A' .. 'Z']
 identSubsequentChars :: String
 identSubsequentChars = identInitialChars ++ "0123456789!%&*-+=\\|?/<>"
 
-arbitraryString :: QuickCheck.Gen String
+arbitraryString :: Gen String
 arbitraryString = do
-  s <- QuickCheck.arbitrary
+  s <- arbitrary
   return $ show (s :: String)
 
-arbitraryBinop :: QuickCheck.Gen Form
+arbitraryBinop :: Gen Form
 arbitraryBinop = do
-  str <- QuickCheck.elements [
+  str <- elements [
     "*", "/", "%", "+", "<", ">", "<=", ">=", "==", "!=", "&&", "||", "<<",
-    ">>", "|>", "<|", "=", "+=", "*=", "/=", "|=", "&=", "|", "."]
-  x <- form
-  y <- form
+    ">>", "|>", "<|", "=", "+=", "*=", "/=", "|=", "&=", "|"]
+  x <- frequentlyAtom
+  y <- frequentlyAtom
   return $ Binop str x y
-  where form = QuickCheck.frequency [
-            (90, arbitraryAtom),
-            (10, QuickCheck.arbitrary)
-          ]
 
-arbitraryForm :: Int -> QuickCheck.Gen Form
+arbitraryDot :: Gen Form
+arbitraryDot = do
+  x <- frequentlyAtom
+  y <- liftM Ident arbitraryIdent
+  return $ Dot x y
+
+-- | Return a form that is usually an atom, but sometimes a more complex form.
+frequentlyAtom :: Gen Form
+frequentlyAtom = frequency [
+                   (90, arbitraryAtom),
+                   (10, arbitrary)
+                 ]
+  
+arbitraryForm :: Int -> Gen Form
 arbitraryForm 0 = arbitraryAtom
-arbitraryForm n = QuickCheck.frequency [
+arbitraryForm n = frequency [
     (15, arbitraryAtom),
     (10, listOfSize 1),
     (5, listOfSize 2),
     (5, arbitraryBinop),
+    (5, arbitraryDot),
     (1, listOfSize 3),
     (1, listOfSize 4),
     (1, listOfSize 5),
     (1, listOfSize 0)
   ]
   where nextRandom = arbitraryForm (n `div` 2)
-        listOfSize size = liftM Sexp $ QuickCheck.vectorOf size nextRandom
+        listOfSize size = liftM Sexp $ vectorOf size nextRandom
 
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
 readAndCheck :: String -> ([Form] -> Bool) -> Bool
-readAndCheck input predicate = case readForms "" input of
+readAndCheck input predicate = case readForms input of
   Left _ -> False
   Right forms -> predicate forms
 
 -- | Reads forms from the input and checks whether the parse succeeded,
 -- returning (parseSucceeded XNOR shouldSucceed)
 readWithOutcome :: Bool -> String -> Bool
-readWithOutcome shouldSucceed input = case readForms "" input of
+readWithOutcome shouldSucceed input = case readForms input of
   Left _ -> not shouldSucceed
   Right _ -> shouldSucceed
 
@@ -105,8 +116,8 @@ prop_readString s = readAndCheck (show s) (== [Str s])
 data InvalidSyntax = UnbalancedString String
                      deriving (Show, Read, Eq)
 
-instance QuickCheck.Arbitrary InvalidSyntax where
-  arbitrary = QuickCheck.oneof [
+instance Arbitrary InvalidSyntax where
+  arbitrary = oneof [
     liftM UnbalancedString (balancedString not)
     ]
 
@@ -120,18 +131,18 @@ isBalanced list = null $ foldl' op [] list
 
 -- | Generates strings consisting of either balanced parentheses (by passing
 -- 'id' as the predicate) or unbalanced parentheses (by passing 'not')
-balancedString :: (Bool -> Bool) -> QuickCheck.Gen String
-balancedString p = QuickCheck.suchThat parens (p . isBalanced)
-  where parens = QuickCheck.listOf $ QuickCheck.elements "()[]{}"
+balancedString :: (Bool -> Bool) -> Gen String
+balancedString p = suchThat parens (p . isBalanced)
+  where parens = listOf $ elements "()[]{}"
 
 prop_invalidSyntax :: InvalidSyntax -> Bool
 prop_invalidSyntax (UnbalancedString s) = readWithOutcome False s
 
 -- | Generate a string that's a valid identifier name.
-arbitraryIdent :: QuickCheck.Gen String
+arbitraryIdent :: Gen String
 arbitraryIdent = do
-  c  <- QuickCheck.elements identInitialChars
-  cs <- QuickCheck.listOf $ QuickCheck.elements identSubsequentChars
+  c  <- elements identInitialChars
+  cs <- listOf $ elements identSubsequentChars
   return $ c:cs
 
 -- | Represents various strings which should parse as valid Cantor syntax
@@ -141,17 +152,17 @@ data ValidSyntax = BalancedString String
                  | ArbitraryDict String
                    deriving (Show, Read, Eq)
 
-instance QuickCheck.Arbitrary ValidSyntax where
-  arbitrary = QuickCheck.oneof [
+instance Arbitrary ValidSyntax where
+  arbitrary = oneof [
     liftM BalancedString (balancedString id),
     liftM ArbitraryIdent arbitraryIdent,
     liftM ArbitraryVector (arbitraryBetween '[' ']'),
     liftM ArbitraryDict (arbitraryBetween '{' '}')
     ]
 
-arbitraryBetween :: Char -> Char -> QuickCheck.Gen String
-arbitraryBetween c1 c2 = QuickCheck.oneof $ map generate [0 .. 4]
-  where generate n = do forms <- QuickCheck.vectorOf n QuickCheck.arbitrary
+arbitraryBetween :: Char -> Char -> Gen String
+arbitraryBetween c1 c2 = oneof $ map generate [0 .. 4]
+  where generate n = do forms <- vectorOf n arbitrary
                         return ([c1] ++ showForms forms ++ [c2])
 
 prop_validSyntax :: ValidSyntax -> Bool
@@ -166,7 +177,7 @@ prop_validSyntax (ArbitraryDict s) = readAndCheck s isMap
 
 
 readOne :: String -> Form -> Assertion
-readOne input expected = case readForms "" input of
+readOne input expected = case readForms input of
   Left err     -> assertFailure $ "Error " ++ show err ++ " for input " ++ input
   Right []     -> assertFailure $ "No forms read for input " ++ input
   Right [form] -> assertEqual "Forms were not equal" expected form
@@ -186,11 +197,11 @@ case_dict = do
 
 readSame :: String -> String -> Assertion
 x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
-  where rightRead = right . readForms ""
+  where rightRead = right . readForms
 
 assertParseError :: String -> Assertion
 assertParseError input = assertBool "Parse expected to fail" parse
-  where parse = case readForms "" input of
+  where parse = case readForms input of
           (Left _)  -> True
           (Right _) -> False
 
@@ -257,16 +268,16 @@ case_precedence = do
       Binop "*" (Binop "*" (Int 1) (Int 1)) (Int 2)
   readOne "print 1 + print 2" $
       Binop "+" (Sexp [Ident "print",Int 1]) (Sexp [Ident "print",Int 2])
-  readOne "foo.bar" $ Binop "." (Ident "foo") (Ident "bar")
-  readOne "foo. bar" $ Binop "." (Ident "foo") (Ident "bar")
-  readOne "foo .bar" $ Binop "." (Ident "foo") (Ident "bar")
+  readOne "foo.bar" $ Dot (Ident "foo") (Ident "bar")
+  readOne "foo. bar" $ Dot (Ident "foo") (Ident "bar")
+  readOne "foo .bar" $ Dot (Ident "foo") (Ident "bar")
   readOne "foo.bar.baz + 2" $
       Binop "+"
-          (Binop "." (Binop "." (Ident "foo") (Ident "bar")) (Ident "baz"))
+          (Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz"))
           (Int 2)
   readOne "print foo.bar.baz" $
       Sexp [Ident "print",
-            Binop "." (Binop "." (Ident "foo") (Ident "bar")) (Ident "baz")]
+            Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")]
 
 readerTests :: Test
 readerTests = $testGroupGenerator

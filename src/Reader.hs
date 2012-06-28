@@ -23,9 +23,9 @@ import           Token
 -- string or an appropriate ReadError if the input is invalid. The inputName
 -- should be a succient description of the origin of this string, e.g., a
 -- filename.
-readForms :: InputName -> String -> Either ReadError [Form]
-readForms _ ""             = Right []
-readForms inputName input = runParse inputName topLevel (input ++ "\n")
+readForms :: String -> Either ReadError [Form]
+readForms ""     = Right []
+readForms input = runParse topLevel (input ++ "\n")
   where topLevel = do
           forms <- many indentedForm
           eof
@@ -45,18 +45,15 @@ showForm (Str s) = show s
 showForm (Sexp s) = "(" ++ unwords (map showForm s) ++ ")"
 showForm (Map s) = "{" ++ unwords (map showForm s) ++ "}"
 showForm (Vector s) = "[" ++ unwords (map showForm s) ++ "]"
-showForm (Binop s left right) = showBinop s (showForm left) (showForm right)
-
-showBinop :: String -> String -> String -> String
-showBinop name left right
-    | name `elem` ["."] = left ++ " " ++ name ++ " " ++ right
-    | otherwise         = "(" ++ left ++ " " ++ name ++ " " ++ right ++ ")"
+showForm (Dot left right) = showForm left ++ "." ++ showForm right
+showForm (Binop s left right) = "(" ++ showForm left ++ " " ++ s ++ " " ++
+                                showForm right ++ ")"
 
 -- | Uses the specified parser to parse a string, returning the result or a
 -- ParseError.
-runParse :: InputName -> CantorParser a -> String -> Either ParseError a
-runParse source aParser input = runIndent source run
-  where run = runParserT aParser NoIgnoreNewlines source input
+runParse :: CantorParser a -> String -> Either ParseError a
+runParse aParser input = runIndent "" run
+  where run = runParserT aParser NoIgnoreNewlines "" input
 
 -- | Reads a form, handling indentation correctly as a way to create a Sexp.
 indentedForm :: CantorParser Form
@@ -149,7 +146,7 @@ complexForm = do
   expr <- readForm
   skipSpaces
   methodCalls <- many methodCall
-  return $ Sexp (expr : methodCalls)
+  return $ foldl1 Dot (expr : methodCalls)
   where methodCall = do
           string "."
           skipSpaces
