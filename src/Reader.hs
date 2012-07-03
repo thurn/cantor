@@ -163,9 +163,10 @@ methodCall :: CantorParser Form
 methodCall = do
   string "."
   withSkippedWhitespace " \t\n" skipSpaces
-  i <- identifier <|> readBetween '(' ')' "method call" expression
+  i <- withSubscriptOperators mcall
   skipSpaces
   return i
+  where mcall = identifier <|> readBetween '(' ')' "method call" expression
 
 -- | Parses a complex form, a form followed by zero more subscript operators
 -- or method calls.
@@ -177,6 +178,7 @@ complexForm = do
   return $ foldl1 fold (expr : methodCalls)
   where fold accum ident@(Ident _)    = Dot accum ident
         fold accum sexp@(Sexp (x:xs)) = Sexp $ Dot accum x : xs
+        fold accum sub@(Subscript x y) = Subscript (fold accum x) y
         fold _ form = error ("Unexpected token in complexForm " ++ show form)
 
 complexForm' :: CantorParser [Form]

@@ -305,6 +305,47 @@ case_operators = do
                 Ident "baz"])
           (Ident "sort")
 
+case_subscript :: Assertion
+case_subscript = do
+  readOne "foo.bar[1]" $
+      Subscript (Dot (Ident "foo")
+                     (Ident "bar"))
+                (Int 1)
+  readOne "foo.bar[1].baz" $
+      Dot (Subscript (Dot (Ident "foo")
+                          (Ident "bar"))
+                     (Int 1))
+          (Ident "baz")
+  readOne "foo.bar[1].baz[2]" $
+      Subscript (Dot (Subscript (Dot (Ident "foo")
+                                     (Ident "bar"))
+                                (Int 1))
+                     (Ident "baz"))
+                (Int 2)
+  readOne "foo.bar[1][2].baz" $
+      Dot (Subscript (Subscript (Dot (Ident "foo")
+                                     (Ident "bar"))
+                                (Int 1))
+                     (Int 2))
+          (Ident "baz")
+  readOne "foo.bar.baz[1]" $
+      Subscript (Dot (Dot (Ident "foo")
+                          (Ident "bar"))
+                     (Ident "baz"))
+                (Int 1)
+  readOne "foo.(bar baz)[1]" $
+      Subscript (Sexp [Dot (Ident "foo")
+                           (Ident "bar"),
+                      Ident "baz"])
+                (Int 1)
+  readOne "foo.(bar baz)[1].(a b)" $
+      Sexp [Dot (Subscript (Sexp [Dot (Ident "foo")
+                                      (Ident "bar"),
+                                 Ident "baz"])
+                           (Int 1))
+                (Ident "a"),
+           Ident "b"]
+
 readerTests :: Test
 readerTests = $testGroupGenerator
 
