@@ -19,6 +19,7 @@ data Form = Int Integer
           | Map [Form]
           | Vector [Form]
           | Dot Form Form
+          | Subscript Form Form
             deriving (Eq, Show, Read)
             
 -- | Indicates a failure during parsing.
@@ -27,22 +28,21 @@ type ReadError = Parsec.ParseError
 -- | The name of a parser input
 type InputName = String
 
--- | An approach for dealing with newlines encountered during parsing, whether
--- they should be ignored (like spaces and tabs), treated as significant
--- syntax, or whether no whitespace should be skipped at all.
-data NewlineStrategy = IgnoreNewlines | NoIgnoreNewlines | NoSkipWhitespace
+-- | Which characters the 'skipSpaces' parser should treat as whitespace
+-- and thus skip.  
+newtype SkippedWhitespace = SkippedWhitespace String
 
 -- | The type for Cantor parsers (indentation-sensitive)
 type CantorParser a = Parsec.ParsecT
                         String
-                        NewlineStrategy
+                        SkippedWhitespace
                         (State.State Parsec.SourcePos)
                         a
 
 -- | The type for Cantor operator parsers
 type CantorOperator = Expr.Operator
                         String
-                        NewlineStrategy
+                        SkippedWhitespace
                         (State.State Parsec.SourcePos)
                         Form
 

@@ -27,6 +27,7 @@ module Token (
   intOrFloat,
   initialHyphen,
   skipSpaces,
+  withSkippedWhitespace,
   operator,
 ) where
 
@@ -36,25 +37,32 @@ import           Text.Parsec
 import qualified Data.Char        as Char
 import qualified Text.Parsec.Char as Parsec.Char
 
--- | Skips whitespace. Based on the current "newline strategy" state, can either
--- skip newlines as well or treat newlines as significant.
+-- | Skips whitespace based on the current state in the "SkippedWhitespace"
+-- slot.
 skipSpaces :: CantorParser String
 skipSpaces = do
-  newlineStrategy <- getState
-  many $ oneOf $ skipped newlineStrategy
-  where skipped IgnoreNewlines   = " \t\n"
-        skipped NoIgnoreNewlines = " \t"
-        skipped NoSkipWhitespace = ""
+  (SkippedWhitespace skip) <- getState
+  many $ oneOf skip
+
+-- | Runs the provided parser with the specified value for the
+-- "SkippedWhitespace" state, then restores the previous value.
+withSkippedWhitespace :: String -> CantorParser a -> CantorParser a
+withSkippedWhitespace skipped parser = do
+  oldSkipped <- getState
+  putState (SkippedWhitespace skipped)
+  parsed <- parser
+  putState oldSkipped
+  return parsed
 
 -- | Symbols that may legally occur as an identifier as long as they are not the
 -- first character.
 identSymbols :: String
-identSymbols = "!%&*-+=\\|?/<>"
+identSymbols = "!%&*-+=\\|?/<>_"
 
 -- | Parses an identifier
 identifier :: CantorParser Form
 identifier = do
-  c  <- letter <?> "identifier"
+  c  <- letter <|> char '_' <?> "identifier"
   cs <- many (alphaNum <|> oneOf identSymbols)
   skipSpaces
   return $ Ident $ c:cs
@@ -68,7 +76,7 @@ operator :: String -> CantorParser (Form -> Form -> Form)
 operator name = try $ do
   string name
   notFollowedBy $ (oneOf opSymbols <|> alphaNum)
-  skipSpaces
+  withSkippedWhitespace " \t\n" skipSpaces
   return $ Binop name
 
 -- | Parses the exponent part of a float in scientific notation.  

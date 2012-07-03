@@ -48,12 +48,13 @@ showForm (Vector s) = "[" ++ unwords (map showForm s) ++ "]"
 showForm (Dot left right) = showForm left ++ "." ++ showForm right
 showForm (Binop s left right) = "(" ++ showForm left ++ " " ++ s ++ " " ++
                                 showForm right ++ ")"
+showForm (Subscript left right) = showForm left ++ "[" ++ showForm right ++ "]"
 
 -- | Uses the specified parser to parse a string, returning the result or a
 -- ParseError.
 runParse :: CantorParser a -> String -> Either ParseError a
 runParse aParser input = runIndent "" run
-  where run = runParserT aParser NoIgnoreNewlines "" input
+  where run = runParserT aParser (SkippedWhitespace " \t") "" input
 
 -- | Reads a form, handling indentation correctly as a way to create a Sexp.
 indentedForm :: CantorParser Form
@@ -66,12 +67,10 @@ indentedForm = do
 -- | Reads all of the forms on a single line of input.
 readLine :: CantorParser Form
 readLine = do
-  forms <- many1 expression
+  expr <- expression
   char '\n' <?> "newline"
   skipSpaces
-  return $ makeSexp forms
-  where makeSexp [form] = form
-        makeSexp forms  = Sexp forms
+  return expr
 
 -- | Parses a single Form from the input stream.
 readForm :: CantorParser Form
@@ -92,12 +91,11 @@ readBetween :: Char -> -- | ^ Opening delimiter
                CantorParser a
 readBetween left right name parser = do
   char left <?> name
-  newlineStrategy <- getState
-  putState IgnoreNewlines -- Until the closing delimiter, ignore newlines
-  skipSpaces
-  parsed <- parser
-  char right
-  putState newlineStrategy -- Restore previous newline strategy
+  parsed <- withSkippedWhitespace " \t\n" $
+    do skipSpaces
+       p <- parser
+       char right
+       return p
   skipSpaces
   return parsed
 
@@ -141,18 +139,52 @@ operatorTable = [
     [leftInfix "|"]
   ]
 
+-- | Parses an invokation of the subscript operator, e.g. foo[2]
+subscript :: CantorParser Form
+subscript = do
+  char '['
+  skipSpaces
+  expr <- expression
+  char ']'
+  skipSpaces
+  return expr
+
+-- | Runs the provided parser and then looks for zero of more invokations of the
+-- subscript operator.
+withSubscriptOperators :: CantorParser Form -> CantorParser Form
+withSubscriptOperators parser = do
+  parsed <- withSkippedWhitespace "" parser
+  subscripts <- many subscript
+  return $ foldl1 Subscript (parsed : subscripts)
+
+-- | Parses a method call, a dot followed by 1) an identifier or 2) a
+-- parenthesized expression.
+methodCall :: CantorParser Form
+methodCall = do
+  string "."
+  withSkippedWhitespace " \t\n" skipSpaces
+  i <- identifier <|> readBetween '(' ')' "method call" expression
+  skipSpaces
+  return i
+
+-- | Parses a complex form, a form followed by zero more subscript operators
+-- or method calls.
 complexForm :: CantorParser Form
 complexForm = do
   expr <- readForm
   skipSpaces
-  methodCalls <- many methodCall
-  return $ foldl1 Dot (expr : methodCalls)
-  where methodCall = do
-          string "."
-          skipSpaces
-          i <- identifier
-          skipSpaces
-          return i
+  methodCalls <- many (methodCall)
+  return $ foldl1 fold (expr : methodCalls)
+  where fold accum ident@(Ident _)    = Dot accum ident
+        fold accum sexp@(Sexp (x:xs)) = Sexp $ Dot accum x : xs
+        fold _ form = error ("Unexpected token in complexForm " ++ show form)
+
+complexForm' :: CantorParser [Form]
+complexForm' = do
+  expr <- readForm
+  skipSpaces
+  methodCalls <- many (methodCall)
+  return $ expr : methodCalls
 
 -- | Parser which reads one or more forms. If multiple forms are read, this is
 -- treated as a function call.

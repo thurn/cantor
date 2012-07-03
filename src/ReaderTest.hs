@@ -39,6 +39,13 @@ identInitialChars = ['a' .. 'z'] ++ ['A' .. 'Z']
 identSubsequentChars :: String
 identSubsequentChars = identInitialChars ++ "0123456789!%&*-+=\\|?/<>"
 
+-- | Generate a string that's a valid identifier name.
+arbitraryIdent :: Gen String
+arbitraryIdent = do
+  c  <- elements identInitialChars
+  cs <- listOf $ elements identSubsequentChars
+  return $ c:cs
+
 arbitraryString :: Gen String
 arbitraryString = do
   s <- arbitrary
@@ -53,13 +60,6 @@ arbitraryBinop = do
   y <- frequentlyAtom
   return $ Binop str x y
 
-arbitraryDot :: Gen Form
-arbitraryDot = do
-  x <- frequentlyAtom
-  y <- liftM Ident arbitraryIdent
-  return $ Dot x y
-
--- | Return a form that is usually an atom, but sometimes a more complex form.
 frequentlyAtom :: Gen Form
 frequentlyAtom = frequency [
                    (90, arbitraryAtom),
@@ -80,7 +80,13 @@ arbitraryForm n = frequency [
     (1, listOfSize 0)
   ]
   where nextRandom = arbitraryForm (n `div` 2)
-        listOfSize size = liftM Sexp $ vectorOf size nextRandom
+        listOfSize size = do
+          fn <- elements [Map, Vector, Sexp]
+          liftM fn $ vectorOf size nextRandom
+        arbitraryDot = do
+          x <- frequentlyAtom
+          y <- liftM Ident arbitraryIdent
+          return $ Dot x y
 
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
@@ -137,13 +143,6 @@ balancedString p = suchThat parens (p . isBalanced)
 
 prop_invalidSyntax :: InvalidSyntax -> Bool
 prop_invalidSyntax (UnbalancedString s) = readWithOutcome False s
-
--- | Generate a string that's a valid identifier name.
-arbitraryIdent :: Gen String
-arbitraryIdent = do
-  c  <- elements identInitialChars
-  cs <- listOf $ elements identSubsequentChars
-  return $ c:cs
 
 -- | Represents various strings which should parse as valid Cantor syntax
 data ValidSyntax = BalancedString String
@@ -207,6 +206,9 @@ assertParseError input = assertBool "Parse expected to fail" parse
 
 case_indent :: Assertion
 case_indent = do
+  "alpha bravo" `readSame` "(alpha bravo)"
+  "[alpha] bravo" `readSame` "([alpha] bravo)"
+  "alpha [bravo]" `readSame` "(alpha [bravo])"
   "alpha\n  bravo" `readSame`
       "(alpha bravo)"
   "alpha bravo\n  charlie" `readSame`
@@ -258,8 +260,8 @@ case_parens = do
   readOne "(foo + bar)" $ Binop "+" (Ident "foo") (Ident "bar")
   readOne "((foo + bar))" $ Sexp [Binop "+" (Ident "foo") (Ident "bar")]
 
-case_precedence :: Assertion
-case_precedence = do  
+case_operators :: Assertion
+case_operators = do  
   readOne "1 + 1 * 2" $
       Binop "+" (Int 1) (Binop "*" (Int 1) (Int 2))
   readOne "1 * 1 + 2" $
@@ -278,6 +280,41 @@ case_precedence = do
   readOne "print foo.bar.baz" $
       Sexp [Ident "print",
             Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")]
+  readOne "1 +\n1" $ Binop "+" (Int 1) (Int 1)
+  readOne "foo .\nbar" $ Dot (Ident "foo") (Ident "bar")
+  readOne "foo.\nbar.\nbaz" $ Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")
+  readOne "foo.bar 1 2" $ Sexp [Dot (Ident "foo") (Ident "bar"),Int 1,Int 2]  
+  readOne "bar foo.baz 1 2" $
+      Sexp [Ident "bar",Dot (Ident "foo") (Ident "baz"),Int 1,Int 2]
+  readOne "list.filter foo.map baz.sort" $
+      Sexp [Dot (Ident "list") (Ident "filter"),
+            Dot (Ident "foo") (Ident "map"),
+            Dot (Ident "baz") (Ident "sort")]
+  readOne "(list.(filter foo).(map baz).sort)" $
+      Sexp [Dot (Sexp [Dot (Sexp [Dot (Ident "list")
+                                      (Ident "filter"),
+                                  Ident "foo"])
+                           (Ident "map"),
+                       Ident "baz"])
+                (Ident "sort")]
+  readOne "list.(filter foo).(map baz).(sort)" $
+      Dot (Sexp [Dot (Sexp [Dot (Ident "list")
+                                (Ident "filter"),
+                            Ident "foo"])
+                     (Ident "map"),
+                Ident "baz"])
+          (Ident "sort")
 
 readerTests :: Test
 readerTests = $testGroupGenerator
+
+
+
+
+
+
+
+
+
+
+
