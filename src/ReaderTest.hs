@@ -307,6 +307,16 @@ case_operators = do
 
 case_subscript :: Assertion
 case_subscript = do
+  readOne "foo[2]" $ Subscript (Ident "foo") (Int 2)
+  readOne "foo[2] + bar[2]" $
+      Binop "+" (Subscript (Ident "foo")
+                           (Int 2))
+                (Subscript (Ident "bar")
+                           (Int 2))
+  readOne "(foo + bar)[2]" $
+    Subscript (Binop "+" (Ident "foo")
+                         (Ident "bar"))
+              (Int 2)
   readOne "foo.bar[1]" $
       Subscript (Dot (Ident "foo")
                      (Ident "bar"))
