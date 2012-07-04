@@ -355,6 +355,15 @@ case_subscript = do
                            (Int 1))
                 (Ident "a"),
            Ident "b"]
+  readOne "[foo.bar[2].baz]" $
+      Vector [Dot (Subscript (Dot (Ident "foo")
+                                  (Ident "bar"))
+                             (Int 2))
+                  (Ident "baz")]
+  readOne "[1][2][3]" $
+      Subscript (Subscript (Vector [Int 1])
+                           (Int 2))
+                (Int 3)
 
 readerTests :: Test
 readerTests = $testGroupGenerator
