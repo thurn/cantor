@@ -51,29 +51,36 @@ arbitraryString = do
   s <- arbitrary
   return $ show (s :: String)
 
-arbitraryBinop :: Gen Form
-arbitraryBinop = do
+arbitraryBinop :: Gen Form -> Gen Form -> Gen Form
+arbitraryBinop genForm1 genForm2 = do
   str <- elements [
     "*", "/", "%", "+", "<", ">", "<=", ">=", "==", "!=", "&&", "||", "<<",
     ">>", "|>", "<|", "=", "+=", "*=", "/=", "|=", "&=", "|"]
-  x <- frequentlyAtom
-  y <- frequentlyAtom
+  x <- genForm1
+  y <- genForm2
   return $ Binop str x y
 
-frequentlyAtom :: Gen Form
-frequentlyAtom = frequency [
-                   (90, arbitraryAtom),
-                   (10, arbitrary)
-                 ]
-  
+arbitraryDot :: Gen Form -> Gen Form
+arbitraryDot genForm = do
+          x <- genForm
+          y <- liftM Ident arbitraryIdent
+          return $ Dot x y
+
+arbitrarySubscript :: Gen Form -> Gen Form -> Gen Form
+arbitrarySubscript genForm1 genForm2 = do
+  x <- genForm1
+  y <- genForm2
+  return $ Subscript x y
+
 arbitraryForm :: Int -> Gen Form
 arbitraryForm 0 = arbitraryAtom
 arbitraryForm n = frequency [
-    (15, arbitraryAtom),
+    (30, arbitraryAtom),
     (10, listOfSize 1),
     (5, listOfSize 2),
-    (5, arbitraryBinop),
-    (5, arbitraryDot),
+    (5, arbitraryBinop nextRandom nextRandom),
+    (5, arbitrarySubscript nextRandom nextRandom),
+    (5, arbitraryDot nextRandom),
     (1, listOfSize 3),
     (1, listOfSize 4),
     (1, listOfSize 5),
@@ -83,10 +90,6 @@ arbitraryForm n = frequency [
         listOfSize size = do
           fn <- elements [Map, Vector, Sexp]
           liftM fn $ vectorOf size nextRandom
-        arbitraryDot = do
-          x <- frequentlyAtom
-          y <- liftM Ident arbitraryIdent
-          return $ Dot x y
 
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
@@ -115,6 +118,7 @@ prop_readInt int = readAndCheck (show int) (== [Int int])
 prop_readFloat :: Double -> Bool
 prop_readFloat float = readAndCheck (show float) (== [Float float])
 
+-- | And strings
 prop_readString :: String -> Bool
 prop_readString s = readAndCheck (show s) (== [Str s])
 
@@ -131,7 +135,6 @@ instance Arbitrary InvalidSyntax where
 isBalanced :: String -> Bool
 isBalanced list = null $ foldl' op [] list
   where op ('(':xs) ')' = xs
-        op ('[':xs) ']' = xs
         op ('{':xs) '}' = xs
         op xs x         = x:xs
 
@@ -139,7 +142,7 @@ isBalanced list = null $ foldl' op [] list
 -- 'id' as the predicate) or unbalanced parentheses (by passing 'not')
 balancedString :: (Bool -> Bool) -> Gen String
 balancedString p = suchThat parens (p . isBalanced)
-  where parens = listOf $ elements "()[]{}"
+  where parens = listOf $ elements "(){}"
 
 prop_invalidSyntax :: InvalidSyntax -> Bool
 prop_invalidSyntax (UnbalancedString s) = readWithOutcome False s
@@ -248,8 +251,11 @@ case_indent = do
   "alpha\n  (bravo\n    )\n  charlie" `readSame`
       "(alpha (bravo) charlie)"
 
-case_indent_error :: Assertion
-case_indent_error = assertParseError "alpha\n    bravo\n  charlie"
+case_parseError :: Assertion
+case_parseError = do
+  assertParseError "alpha\n    bravo\n  charlie"
+  assertParseError "foo[]"
+  assertParseError "foo.()"
 
 case_parens :: Assertion
 case_parens = do
@@ -364,6 +370,10 @@ case_subscript = do
       Subscript (Subscript (Vector [Int 1])
                            (Int 2))
                 (Int 3)
+  readOne "foo[bar] [baz]" $ 
+      Sexp [Subscript (Ident "foo")
+                      (Ident "bar"),
+            Vector [Ident "baz"]]
 
 readerTests :: Test
 readerTests = $testGroupGenerator

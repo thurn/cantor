@@ -1,6 +1,7 @@
 -- This is a heavily modified version of the token parsing implementation from
 -- Text.Parsec.Token. The original code is used under the license found below.
-
+-- All new contributions are free and unencumbered software released into the
+-- public domain.
 
 -- Copyright 1999-2000, Daan Leijen; 2007, Paolo Martini. All rights reserved.
 -- Redistribution and use in source and binary forms, with or without
@@ -134,48 +135,38 @@ stringLiteral = do
 
 stringChar :: CantorParser (Maybe Char)
 stringChar = do c <- satisfy stringLetter
-                return (Just c)
-             <|> stringEscape
-             <?> "string character"
+                return $ Just c
+            <|> stringEscape
+            <?> "string character"
 
 stringLetter :: Char -> Bool
 stringLetter c = c /= '"' && c /= '\\' && c > '\026'
 
 stringEscape :: CantorParser (Maybe Char)
-stringEscape = do{ char '\\'
-                 ;     do{ escapeGap  ; return Nothing }
-                   <|> do{ escapeEmpty; return Nothing }
-                   <|> do{ esc <- escapeCode; return (Just esc) }
-                 }
+stringEscape = char '\\' >> escape
+  where escape = (escapeEmpty >> return Nothing) <|>
+                 do esc <- escapeCode
+                    return $ Just esc
 
 escapeEmpty :: CantorParser Char
 escapeEmpty = char '&'
 
-escapeGap :: CantorParser Char
-escapeGap = do many1 space
-               char '\\' <?> "end of string gap"
-
 escapeCode :: CantorParser Char
-escapeCode = charEsc <|> charNum <|> charAscii <|> charControl <?> "escape code"
-
-charControl :: CantorParser Char
-charControl = do char '^'
-                 code <- upper
-                 return (toEnum (fromEnum code - fromEnum 'A'))
+escapeCode = charEsc <|> charNum <|> charAscii <?> "escape code"
 
 charNum :: CantorParser Char
-charNum = do code <- decimal
-                     <|> do{ char 'o'; number 8 Parsec.Char.octDigit }
-                     <|> do{ char 'x'; number 16 Parsec.Char.hexDigit }
-             return (toEnum (fromInteger code))
+charNum = do code <- decimal <|>
+                     (char 'o' >> number 8 Parsec.Char.octDigit) <|>
+                     (char 'x' >> number 16 Parsec.Char.hexDigit)
+             (return . toEnum . fromInteger) code
 
 charEsc :: CantorParser Char
 charEsc = choice (map parseEsc escMap)
-  where parseEsc (c,code) = do{ char c; return code }
+  where parseEsc (c,code) = char c >> return code
 
 charAscii :: CantorParser Char
 charAscii = choice (map parseAscii asciiMap)
-  where parseAscii (asc,code) = try (do{ string asc; return code })
+  where parseAscii (asc,code) = try (string asc >> return code)
 
 escMap :: [(Char, Char)]
 escMap = zip ("abfnrtv\\\"\'") ("\a\b\f\n\r\t\v\\\"\'")

@@ -146,7 +146,6 @@ subscript = do
   skipSpaces
   expr <- expression
   char ']'
-  skipSpaces
   return expr
 
 -- | Runs the provided parser and then looks for zero of more invokations of the
@@ -155,6 +154,7 @@ withSubscriptOperators :: CantorParser Form -> CantorParser Form
 withSubscriptOperators parser = do
   parsed <- withSkippedWhitespace "" parser
   subscripts <- many subscript
+  skipSpaces
   return $ foldl1 Subscript (parsed : subscripts)
 
 -- | Parses a method call, a dot followed by 1) an identifier or 2) a
@@ -180,13 +180,6 @@ complexForm = do
         fold accum (Sexp (x:xs)) = Sexp $ Dot accum x : xs
         fold accum (Subscript x y) = Subscript (fold accum x) y
         fold _ form = error ("Unexpected token in complexForm " ++ show form)
-
-complexForm' :: CantorParser [Form]
-complexForm' = do
-  expr <- readForm
-  skipSpaces
-  methodCalls <- many (methodCall)
-  return $ expr : methodCalls
 
 -- | Parser which reads one or more forms. If multiple forms are read, this is
 -- treated as a function call.
