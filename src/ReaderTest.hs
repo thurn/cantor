@@ -21,10 +21,6 @@ import           Test.QuickCheck                      (Arbitrary, Gen, sized,
 instance Arbitrary Form where
   arbitrary = sized arbitraryForm
 
-right :: Either a b -> b
-right (Left _) = error "Expected Right"
-right (Right x) = x
-
 arbitraryAtom :: Gen Form
 arbitraryAtom = oneof [
   liftM Int arbitrary,
@@ -47,9 +43,9 @@ arbitraryIdent = do
   return $ c:cs
 
 arbitraryString :: Gen String
-arbitraryString = do
-  s <- arbitrary
-  return $ show (s :: String)
+arbitraryString = suchThat str (all (/= '~'))
+  where str = do s <- arbitrary
+                 return $ show (s :: String)
 
 arbitraryBinop :: Gen Form -> Gen Form -> Gen Form
 arbitraryBinop genForm1 genForm2 = do
@@ -117,10 +113,6 @@ prop_readInt int = readAndCheck (show int) (== [Int int])
 -- | Likewise for doubles.
 prop_readFloat :: Double -> Bool
 prop_readFloat float = readAndCheck (show float) (== [Float float])
-
--- | And strings
-prop_readString :: String -> Bool
-prop_readString s = readAndCheck (show s) (== [Str s])
 
 -- | Represents strings which are *not* valid Cantor syntax
 data InvalidSyntax = UnbalancedString String
@@ -199,7 +191,10 @@ case_dict = do
 
 readSame :: String -> String -> Assertion
 x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
-  where rightRead = right . readForms
+  where rightRead s = case readForms s of
+          (Left err)    ->
+              error ("\n\n" ++ show err ++ "\n\nFor input:\n\n" ++ s ++ "\n")
+          (Right forms) -> forms
 
 assertParseError :: String -> Assertion
 assertParseError input = assertBool "Parse expected to fail" parse
@@ -256,6 +251,7 @@ case_parseError = do
   assertParseError "alpha\n    bravo\n  charlie"
   assertParseError "foo[]"
   assertParseError "foo.()"
+  assertParseError "foo\tbar"
 
 case_parens :: Assertion
 case_parens = do

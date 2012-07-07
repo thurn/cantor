@@ -54,7 +54,7 @@ showForm (Subscript left right) = showForm left ++ "[" ++ showForm right ++ "]"
 -- ParseError.
 runParse :: CantorParser a -> String -> Either ParseError a
 runParse aParser input = runIndent "" run
-  where run = runParserT aParser (SkippedWhitespace " \t") "" input
+  where run = runParserT aParser (SkippedWhitespace " ") "" input
 
 -- | Reads a form, handling indentation correctly as a way to create a Sexp.
 indentedForm :: CantorParser Form
@@ -82,6 +82,34 @@ readForm = identifier        <|>
            readVector        <|>
            readMap
 
+-- | Parses a string literal
+stringLiteral :: CantorParser Form
+stringLiteral = do
+  char '"'  <?> "string literal"
+  forms <- many (stringComponent <|> stringUnquote)
+  char '"'
+  skipSpaces
+  return $ simplify forms
+  where simplify []          = Str ""
+        simplify [s@(Str _)] = s
+        simplify xs          = Sexp (Ident "str" : xs)
+
+stringUnquote :: CantorParser Form
+stringUnquote = do
+  char '~'
+  form <- withSkippedWhitespace "" complexForm
+  return form
+
+-- | Parses a component of string: a regular letter or escape sequence.
+stringComponent :: CantorParser Form
+stringComponent = do
+  str <- many1 stringChar
+  return $ Str $ foldr (maybe id (:)) "" str
+  where stringChar = do c <- satisfy stringLetter
+                        return $ Just c
+                     <|> stringEscape
+                     <?> "string character"
+
 -- | Makes a parser which looks for an opening delimiter, then applies the
 -- supplied parser, then looks for a closing delimiter.
 readBetween :: Char -> -- | ^ Opening delimiter
@@ -91,7 +119,7 @@ readBetween :: Char -> -- | ^ Opening delimiter
                CantorParser a
 readBetween left right name parser = do
   char left <?> name
-  parsed <- withSkippedWhitespace " \t\n" $
+  parsed <- withSkippedWhitespace " \n" $
     do skipSpaces
        p <- parser
        char right
@@ -162,7 +190,7 @@ withSubscriptOperators parser = do
 methodCall :: CantorParser Form
 methodCall = do
   string "."
-  withSkippedWhitespace " \t\n" skipSpaces
+  withSkippedWhitespace " \n" skipSpaces
   i <- withSubscriptOperators mcall
   skipSpaces
   return i
