@@ -371,6 +371,36 @@ case_subscript = do
                       (Ident "bar"),
             Vector [Ident "baz"]]
 
+case_string :: Assertion
+case_string = do
+  readOne "\"~foo\"" $ Sexp [Ident "str",Ident "foo"]
+  readOne "\"~1\"" $ Sexp [Ident "str",Int 1]
+  readOne "\"~foo bar\"" $ Sexp [Ident "str",Ident "foo",Str " bar"]
+  readOne "\"foo ~bar baz ~qux ~alpha\"" $
+      Sexp [Ident "str",Str "foo ",Ident "bar",Str " baz ",Ident "qux",Str " ",
+            Ident "alpha"]
+  readOne "\"~\"str\"\"" $ Str "str"
+  readOne "\"~(foo bar baz)\"" $
+      Sexp [Ident "str",Sexp [Ident "foo",Ident "bar",Ident "baz"]]
+  readOne "\"~(1 + 2)\"" $
+      Sexp [Ident "str",Binop "+" (Int 1) (Int 2)]
+  readOne "\"~[1 2 3]\"" $ Sexp [Ident "str",Vector [Int 1,Int 2,Int 3]]
+  readOne "\"~foo.bar\"" $ Sexp [Ident "str",Dot (Ident "foo") (Ident "bar")]
+  readOne "\"~(foo.bar)\"" $
+      Sexp [Ident "str",Sexp [Dot (Ident "foo") (Ident "bar")]]
+  readOne "\"~foo.bar .baz\"" $
+      Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str " .baz"]
+  readOne "\"~foo.bar[2]\"" $
+      Sexp [Ident "str",Subscript (Dot (Ident "foo") (Ident "bar")) (Int 2)] 
+  readOne "\"~foo.bar [2]\"" $
+      Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str " [2]"]
+  readOne "\"~foo.bar.baz[2].qux\"" $
+      Sexp [Ident "str",Dot (Subscript (Dot (Dot (Ident "foo")
+                                                 (Ident "bar"))
+                                            (Ident "baz"))
+                                       (Int 2))
+                            (Ident "qux")]
+
 readerTests :: Test
 readerTests = $testGroupGenerator
 

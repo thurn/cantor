@@ -86,18 +86,17 @@ readForm = identifier        <|>
 stringLiteral :: CantorParser Form
 stringLiteral = do
   char '"'  <?> "string literal"
-  forms <- many (stringComponent <|> stringUnquote)
+  forms <- many (stringUnquote <|> stringComponent)
   char '"'
   skipSpaces
   return $ simplify forms
-  where simplify []          = Str ""
-        simplify [s@(Str _)] = s
+  where simplify [s@(Str _)] = s
         simplify xs          = Sexp (Ident "str" : xs)
 
 stringUnquote :: CantorParser Form
 stringUnquote = do
   char '~'
-  form <- withSkippedWhitespace "" complexForm
+  form <- withSkippedWhitespace "" (complexFormSkipping "")
   return form
 
 -- | Parses a component of string: a regular letter or escape sequence.
@@ -187,27 +186,33 @@ withSubscriptOperators parser = do
 
 -- | Parses a method call, a dot followed by 1) an identifier or 2) a
 -- parenthesized expression.
-methodCall :: CantorParser Form
-methodCall = do
+methodCall :: String -> CantorParser Form
+methodCall s = do
   string "."
-  withSkippedWhitespace " \n" skipSpaces
-  i <- withSubscriptOperators mcall
+  withSkippedWhitespace s skipSpaces
+  i <- withSubscriptOperators mCall
   skipSpaces
   return i
-  where mcall = identifier <|> readBetween '(' ')' "method call" expression
+  where mCall = identifier <|> readBetween '(' ')' "method call" expression
 
 -- | Parses a complex form, a form followed by zero more subscript operators
--- or method calls.
-complexForm :: CantorParser Form
-complexForm = do
+-- or method calls. Uses the provided string as SkippedWhitespace following the
+-- '.' operator in method calls.
+complexFormSkipping :: String -> CantorParser Form
+complexFormSkipping s = do
   expr <- withSubscriptOperators readForm
   skipSpaces
-  methodCalls <- many (methodCall)
+  methodCalls <- many (try (methodCall s))
   return $ foldl1 fold (expr : methodCalls)
   where fold accum ident@(Ident _)    = Dot accum ident
         fold accum (Sexp (x:xs)) = Sexp $ Dot accum x : xs
         fold accum (Subscript x y) = Subscript (fold accum x) y
         fold _ form = error ("Unexpected token in complexForm " ++ show form)
+
+-- | Parses a complex form, skipping spaces and newlines after the '.' operator
+-- for method calls.
+complexForm :: CantorParser Form
+complexForm = complexFormSkipping " \n"
 
 -- | Parser which reads one or more forms. If multiple forms are read, this is
 -- treated as a function call.
