@@ -6,7 +6,7 @@ module ReaderTest (
   readerTests
 ) where
 
-import           Control.Monad                        (liftM)
+import           Control.Applicative                  ((<*>), (<$>))
 import           Data.List                            (foldl')
 import           Reader
 import           Test.Framework                       (Test)
@@ -23,17 +23,17 @@ instance Arbitrary Form where
 
 arbitraryAtom :: Gen Form
 arbitraryAtom = oneof [
-  liftM Int arbitrary,
-  liftM Float arbitrary,
-  liftM Str arbitraryString,
-  liftM Ident arbitraryIdent
+  Int   <$> arbitrary,
+  Float <$> arbitrary,
+  Str   <$> arbitraryString,
+  Ident <$> arbitraryIdent
   ]
 
 identInitialChars :: String
 identInitialChars = ['a' .. 'z'] ++ ['A' .. 'Z']
 
 identSubsequentChars :: String
-identSubsequentChars = identInitialChars ++ "0123456789!%&*-+=\\|?/<>"
+identSubsequentChars = identInitialChars ++ "0123456789!%&*-+=|?/<>"
 
 -- | Generate a string that's a valid identifier name.
 arbitraryIdent :: Gen String
@@ -43,30 +43,24 @@ arbitraryIdent = do
   return $ c:cs
 
 arbitraryString :: Gen String
-arbitraryString = suchThat str (all (/= '~'))
-  where str = do s <- arbitrary
-                 return $ show (s :: String)
+arbitraryString = suchThat arbitrary (all (/= '~'))
+
+newtype ArbitraryString = ArbitraryString String deriving (Show, Eq)
+
+instance Arbitrary ArbitraryString where
+  arbitrary = ArbitraryString <$> arbitraryString
 
 arbitraryBinop :: Gen Form -> Gen Form -> Gen Form
-arbitraryBinop genForm1 genForm2 = do
-  str <- elements [
-    "*", "/", "%", "+", "<", ">", "<=", ">=", "==", "!=", "&&", "||", "<<",
-    ">>", "|>", "<|", "=", "+=", "*=", "/=", "|=", "&=", "|"]
-  x <- genForm1
-  y <- genForm2
-  return $ Binop str x y
+arbitraryBinop genForm1 genForm2 = Binop <$> str <*> genForm1 <*> genForm2
+  where str = elements  ["*", "/", "%", "+", "<", ">", "<=", ">=", "==", "!=",
+                         "&&", "||", "<<", ">>", "|>", "<|", "=", "+=", "*=",
+                         "/=", "|=", "&=", "|"]
 
 arbitraryDot :: Gen Form -> Gen Form
-arbitraryDot genForm = do
-          x <- genForm
-          y <- liftM Ident arbitraryIdent
-          return $ Dot x y
+arbitraryDot genForm = Dot <$> genForm <*> (Ident <$> arbitraryIdent)
 
 arbitrarySubscript :: Gen Form -> Gen Form -> Gen Form
-arbitrarySubscript genForm1 genForm2 = do
-  x <- genForm1
-  y <- genForm2
-  return $ Subscript x y
+arbitrarySubscript genForm1 genForm2 = Subscript <$> genForm1 <*> genForm2
 
 arbitraryForm :: Int -> Gen Form
 arbitraryForm 0 = arbitraryAtom
@@ -85,20 +79,37 @@ arbitraryForm n = frequency [
   where nextRandom = arbitraryForm (n `div` 2)
         listOfSize size = do
           fn <- elements [Map, Vector, Sexp]
-          liftM fn $ vectorOf size nextRandom
+          fn <$> vectorOf size nextRandom
+
+prop_stringConcat :: ArbitraryString -> ArbitraryString -> Bool
+prop_stringConcat (ArbitraryString s1) (ArbitraryString s2) =
+    readAndCheck (show strings) (== [Str strings])
+  where strings   = s1 ++ s2
+
+showDropDelimiters :: String -> String
+showDropDelimiters = tail . init . show
+
+prop_stringUnquote :: ArbitraryString -> Form -> ArbitraryString -> Bool
+prop_stringUnquote (ArbitraryString s1) form (ArbitraryString s2) =
+    readAndCheck generated $ (== [expected]) . (map dropEmptyStrs)
+  where generated = "\"" ++ showDropDelimiters s1 ++ "~" ++ showForms [form] ++
+                    "\\&" ++ showDropDelimiters s2 ++ "\""
+        expected = dropEmptyStrs $ Sexp [Ident "str", Str s1, form, Str s2]
+        dropEmptyStrs (Sexp xs) = Sexp $ filter (/= Str "") xs
+        dropEmptyStrs x         = x
 
 -- | Reads forms from the provided string and applies the provided predicate to
 -- the result.
 readAndCheck :: String -> ([Form] -> Bool) -> Bool
 readAndCheck input predicate = case readForms input of
-  Left _ -> False
+  Left _      -> False
   Right forms -> predicate forms
 
 -- | Reads forms from the input and checks whether the parse succeeded,
 -- returning (parseSucceeded XNOR shouldSucceed)
 readWithOutcome :: Bool -> String -> Bool
 readWithOutcome shouldSucceed input = case readForms input of
-  Left _ -> not shouldSucceed
+  Left _  -> not shouldSucceed
   Right _ -> shouldSucceed
 
 -- | 'showForms' and 'readForms' are the opposite of each other.
@@ -120,7 +131,7 @@ data InvalidSyntax = UnbalancedString String
 
 instance Arbitrary InvalidSyntax where
   arbitrary = oneof [
-    liftM UnbalancedString (balancedString not)
+    UnbalancedString <$> balancedString not
     ]
 
 -- | Checks if a string consists of balanced parentheses
@@ -148,10 +159,10 @@ data ValidSyntax = BalancedString String
 
 instance Arbitrary ValidSyntax where
   arbitrary = oneof [
-    liftM BalancedString (balancedString id),
-    liftM ArbitraryIdent arbitraryIdent,
-    liftM ArbitraryVector (arbitraryBetween '[' ']'),
-    liftM ArbitraryDict (arbitraryBetween '{' '}')
+    BalancedString  <$> balancedString id,
+    ArbitraryIdent  <$> arbitraryIdent,
+    ArbitraryVector <$> arbitraryBetween '[' ']',
+    ArbitraryDict   <$> arbitraryBetween '{' '}'
     ]
 
 arbitraryBetween :: Char -> Char -> Gen String
@@ -168,7 +179,6 @@ prop_validSyntax (ArbitraryVector s) = readAndCheck s isVector
 prop_validSyntax (ArbitraryDict s) = readAndCheck s isMap
   where isMap [Map _] = True
         isMap _       = False
-
 
 readOne :: String -> Form -> Assertion
 readOne input expected = case readForms input of
@@ -263,7 +273,7 @@ case_parens = do
   readOne "((foo + bar))" $ Sexp [Binop "+" (Ident "foo") (Ident "bar")]
 
 case_operators :: Assertion
-case_operators = do  
+case_operators = do
   readOne "1 + 1 * 2" $
       Binop "+" (Int 1) (Binop "*" (Int 1) (Int 2))
   readOne "1 * 1 + 2" $
@@ -285,7 +295,7 @@ case_operators = do
   readOne "1 +\n1" $ Binop "+" (Int 1) (Int 1)
   readOne "foo .\nbar" $ Dot (Ident "foo") (Ident "bar")
   readOne "foo.\nbar.\nbaz" $ Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")
-  readOne "foo.bar 1 2" $ Sexp [Dot (Ident "foo") (Ident "bar"),Int 1,Int 2]  
+  readOne "foo.bar 1 2" $ Sexp [Dot (Ident "foo") (Ident "bar"),Int 1,Int 2]
   readOne "bar foo.baz 1 2" $
       Sexp [Ident "bar",Dot (Ident "foo") (Ident "baz"),Int 1,Int 2]
   readOne "list.filter foo.map baz.sort" $
@@ -366,7 +376,7 @@ case_subscript = do
       Subscript (Subscript (Vector [Int 1])
                            (Int 2))
                 (Int 3)
-  readOne "foo[bar] [baz]" $ 
+  readOne "foo[bar] [baz]" $
       Sexp [Subscript (Ident "foo")
                       (Ident "bar"),
             Vector [Ident "baz"]]
@@ -391,7 +401,9 @@ case_string = do
   readOne "\"~foo.bar .baz\"" $
       Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str " .baz"]
   readOne "\"~foo.bar[2]\"" $
-      Sexp [Ident "str",Subscript (Dot (Ident "foo") (Ident "bar")) (Int 2)] 
+      Sexp [Ident "str",Subscript (Dot (Ident "foo") (Ident "bar")) (Int 2)]
+  readOne "\"~foo.bar.\"" $
+      Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str "."]
   readOne "\"~foo.bar [2]\"" $
       Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str " [2]"]
   readOne "\"~foo.bar.baz[2].qux\"" $
@@ -403,14 +415,3 @@ case_string = do
 
 readerTests :: Test
 readerTests = $testGroupGenerator
-
-
-
-
-
-
-
-
-
-
-

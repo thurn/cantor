@@ -11,12 +11,13 @@ module Reader (
   showForms,
 ) where
 
-import           Data.List          (intercalate)
+import           Control.Applicative ((<$>))
+import           Data.List           (intercalate)
 import           Datatypes
 import           Text.Parsec
-import           Text.Parsec.Expr   (Assoc(..), Operator(..),
-                                    buildExpressionParser)
-import           Text.Parsec.Indent (checkIndent, runIndent, withBlock)
+import           Text.Parsec.Expr    (Assoc(..), Operator(..),
+                                      buildExpressionParser)
+import           Text.Parsec.Indent  (checkIndent, runIndent, withBlock)
 import           Token
 
 -- | Parses a string and returns a list of top-level Forms present in the
@@ -90,9 +91,12 @@ stringLiteral = do
   char '"'
   skipSpaces
   return $ simplify forms
-  where simplify [s@(Str _)] = s
+  where simplify []          = Str ""
+        simplify [s@(Str _)] = s
         simplify xs          = Sexp (Ident "str" : xs)
 
+-- | Parses a string unquote, a ~ followed by any complex form not containing
+-- whitespace.
 stringUnquote :: CantorParser Form
 stringUnquote = do
   char '~'
@@ -128,13 +132,13 @@ readBetween left right name parser = do
 
 -- | Reads a vector literal.
 readVector :: CantorParser Form
-readVector = fmap Vector $
-    readBetween '[' ']' "vector literal" $ many complexForm
+readVector = Vector <$>
+    readBetween '[' ']' "vector literal" (many complexForm)
 
 -- | Reads a map literal.
 readMap :: CantorParser Form
-readMap = fmap Map $
-    readBetween '{' '}' "map literal" $ many complexForm
+readMap = Map <$>
+    readBetween '{' '}' "map literal" (many complexForm)
 
 -- | Reads a parenthesized expression. If a single form is present in such an
 -- expression, it's treated as a no-arg function invokation. If multiple forms
@@ -142,7 +146,7 @@ readMap = fmap Map $
 readParenthesized :: CantorParser Form
 readParenthesized = try singleForm <|> multipleForms
   where readParens    = readBetween '(' ')' "expression"
-        singleForm    = fmap (Sexp . return) $ readParens complexForm
+        singleForm    = (Sexp . return) <$> readParens complexForm
         multipleForms = readParens $ option (Sexp []) expression
 
 -- | Creates an operator parser for an infix, left associative operator with

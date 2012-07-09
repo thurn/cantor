@@ -60,7 +60,7 @@ withSkippedWhitespace skipped parser = do
 -- | Symbols that may legally occur as an identifier as long as they are not the
 -- first character.
 identSymbols :: String
-identSymbols = "!%&*-+=\\|?/<>_"
+identSymbols = "!%&*-+=|?/<>_"
 
 -- | Parses an identifier
 identifier :: CantorParser Form
@@ -72,7 +72,7 @@ identifier = do
   
 -- | Symbols that may occur as part of an operator
 opSymbols :: String
-opSymbols = "!%&*-+=\\|?/<>"
+opSymbols = "!%&*-+=|?/<>"
 
 -- | Creates a parser which recognizes the operator with the specified name.
 operator :: String -> CantorParser (Form -> Form -> Form)
