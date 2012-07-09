@@ -180,8 +180,8 @@ prop_validSyntax (ArbitraryDict s) = readAndCheck s isMap
   where isMap [Map _] = True
         isMap _       = False
 
-readOne :: String -> Form -> Assertion
-readOne input expected = case readForms input of
+(--->) :: String -> Form -> Assertion
+input ---> expected = case readForms input of
   Left err     -> assertFailure $ "Error " ++ show err ++ " for input " ++ input
   Right []     -> assertFailure $ "No forms read for input " ++ input
   Right [form] -> assertEqual "Forms were not equal" expected form
@@ -189,15 +189,15 @@ readOne input expected = case readForms input of
 
 case_vector :: Assertion
 case_vector = do
-  readOne "[]" $ Vector []
-  readOne "[1]" $ Vector [Int 1]
-  readOne "[1 2]" $ Vector [Int 1, Int 2]
+  "[]" ---> Vector []
+  "[1]" ---> Vector [Int 1]
+  "[1 2]" ---> Vector [Int 1, Int 2]
 
 case_dict :: Assertion
 case_dict = do
-  readOne "{}" $ Map []
-  readOne "{1}" $ Map [Int 1]
-  readOne "{1 2}" $ Map [Int 1, Int 2]
+  "{}" ---> Map []
+  "{1}" ---> Map [Int 1]
+  "{1 2}" ---> Map [Int 1, Int 2]
 
 readSame :: String -> String -> Assertion
 x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
@@ -211,6 +211,18 @@ assertParseError input = assertBool "Parse expected to fail" parse
   where parse = case readForms input of
           (Left _)  -> True
           (Right _) -> False
+
+case_parseError :: Assertion
+case_parseError = mapM_ assertParseError [
+  "alpha\n    bravo\n  charlie",
+  "foo[]",
+  "foo.()",
+  "foo\tbar",
+  "\"foo\nbar\"",
+  "\"foo\n~bar\"",
+  "\"foo\n\"",
+  "\"\nfoo\"",
+  "\"\n\""]
 
 case_indent :: Assertion
 case_indent = do
@@ -255,61 +267,56 @@ case_indent = do
       "(alpha (bravo) charlie)"
   "alpha\n  (bravo\n    )\n  charlie" `readSame`
       "(alpha (bravo) charlie)"
-
-case_parseError :: Assertion
-case_parseError = do
-  assertParseError "alpha\n    bravo\n  charlie"
-  assertParseError "foo[]"
-  assertParseError "foo.()"
-  assertParseError "foo\tbar"
+  " alpha bravo" `readSame` "(alpha bravo)"
+  " alpha bravo\n   charlie" `readSame` "((alpha bravo) charlie)"
 
 case_parens :: Assertion
 case_parens = do
-  readOne "(foo)" $ Sexp [Ident "foo"]
-  readOne "(foo bar)" $ Sexp [Ident "foo",Ident "bar"]
-  readOne "((foo))" $ Sexp [Sexp [Ident "foo"]]
-  readOne "((foo bar))" $ Sexp [Sexp [Ident "foo",Ident "bar"]]
-  readOne "(foo + bar)" $ Binop "+" (Ident "foo") (Ident "bar")
-  readOne "((foo + bar))" $ Sexp [Binop "+" (Ident "foo") (Ident "bar")]
+  "(foo)" ---> Sexp [Ident "foo"]
+  "(foo bar)" ---> Sexp [Ident "foo",Ident "bar"]
+  "((foo))" ---> Sexp [Sexp [Ident "foo"]]
+  "((foo bar))" ---> Sexp [Sexp [Ident "foo",Ident "bar"]]
+  "(foo + bar)" ---> Binop "+" (Ident "foo") (Ident "bar")
+  "((foo + bar))" ---> Sexp [Binop "+" (Ident "foo") (Ident "bar")]
 
 case_operators :: Assertion
 case_operators = do
-  readOne "1 + 1 * 2" $
+  "1 + 1 * 2" --->
       Binop "+" (Int 1) (Binop "*" (Int 1) (Int 2))
-  readOne "1 * 1 + 2" $
+  "1 * 1 + 2" --->
       Binop "+" (Binop "*" (Int 1) (Int 1)) (Int 2)
-  readOne "1 * 1 * 2" $
+  "1 * 1 * 2" --->
       Binop "*" (Binop "*" (Int 1) (Int 1)) (Int 2)
-  readOne "print 1 + print 2" $
+  "print 1 + print 2" --->
       Binop "+" (Sexp [Ident "print",Int 1]) (Sexp [Ident "print",Int 2])
-  readOne "foo.bar" $ Dot (Ident "foo") (Ident "bar")
-  readOne "foo. bar" $ Dot (Ident "foo") (Ident "bar")
-  readOne "foo .bar" $ Dot (Ident "foo") (Ident "bar")
-  readOne "foo.bar.baz + 2" $
+  "foo.bar" ---> Dot (Ident "foo") (Ident "bar")
+  "foo. bar" ---> Dot (Ident "foo") (Ident "bar")
+  "foo .bar" ---> Dot (Ident "foo") (Ident "bar")
+  "foo.bar.baz + 2" --->
       Binop "+"
           (Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz"))
           (Int 2)
-  readOne "print foo.bar.baz" $
+  "print foo.bar.baz" --->
       Sexp [Ident "print",
             Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")]
-  readOne "1 +\n1" $ Binop "+" (Int 1) (Int 1)
-  readOne "foo .\nbar" $ Dot (Ident "foo") (Ident "bar")
-  readOne "foo.\nbar.\nbaz" $ Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")
-  readOne "foo.bar 1 2" $ Sexp [Dot (Ident "foo") (Ident "bar"),Int 1,Int 2]
-  readOne "bar foo.baz 1 2" $
+  "1 +\n1" ---> Binop "+" (Int 1) (Int 1)
+  "foo .\nbar" ---> Dot (Ident "foo") (Ident "bar")
+  "foo.\nbar.\nbaz" ---> Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")
+  "foo.bar 1 2" ---> Sexp [Dot (Ident "foo") (Ident "bar"),Int 1,Int 2]
+  "bar foo.baz 1 2" --->
       Sexp [Ident "bar",Dot (Ident "foo") (Ident "baz"),Int 1,Int 2]
-  readOne "list.filter foo.map baz.sort" $
+  "list.filter foo.map baz.sort" --->
       Sexp [Dot (Ident "list") (Ident "filter"),
             Dot (Ident "foo") (Ident "map"),
             Dot (Ident "baz") (Ident "sort")]
-  readOne "(list.(filter foo).(map baz).sort)" $
+  "(list.(filter foo).(map baz).sort)" --->
       Sexp [Dot (Sexp [Dot (Sexp [Dot (Ident "list")
                                       (Ident "filter"),
                                   Ident "foo"])
                            (Ident "map"),
                        Ident "baz"])
                 (Ident "sort")]
-  readOne "list.(filter foo).(map baz).(sort)" $
+  "list.(filter foo).(map baz).(sort)" --->
       Dot (Sexp [Dot (Sexp [Dot (Ident "list")
                                 (Ident "filter"),
                             Ident "foo"])
@@ -319,99 +326,106 @@ case_operators = do
 
 case_subscript :: Assertion
 case_subscript = do
-  readOne "foo[2]" $ Subscript (Ident "foo") (Int 2)
-  readOne "foo[2] + bar[2]" $
+  "foo[2]" ---> Subscript (Ident "foo") (Int 2)
+  "foo[2] + bar[2]" --->
       Binop "+" (Subscript (Ident "foo")
                            (Int 2))
                 (Subscript (Ident "bar")
                            (Int 2))
-  readOne "(foo + bar)[2]" $
+  "(foo + bar)[2]" --->
     Subscript (Binop "+" (Ident "foo")
                          (Ident "bar"))
               (Int 2)
-  readOne "foo.bar[1]" $
+  "foo.bar[1]" --->
       Subscript (Dot (Ident "foo")
                      (Ident "bar"))
                 (Int 1)
-  readOne "foo.bar[1].baz" $
+  "foo.bar[1].baz" --->
       Dot (Subscript (Dot (Ident "foo")
                           (Ident "bar"))
                      (Int 1))
           (Ident "baz")
-  readOne "foo.bar[1].baz[2]" $
+  "foo.bar[1].baz[2]" --->
       Subscript (Dot (Subscript (Dot (Ident "foo")
                                      (Ident "bar"))
                                 (Int 1))
                      (Ident "baz"))
                 (Int 2)
-  readOne "foo.bar[1][2].baz" $
+  "foo.bar[1][2].baz" --->
       Dot (Subscript (Subscript (Dot (Ident "foo")
                                      (Ident "bar"))
                                 (Int 1))
                      (Int 2))
           (Ident "baz")
-  readOne "foo.bar.baz[1]" $
+  "foo.bar.baz[1]" --->
       Subscript (Dot (Dot (Ident "foo")
                           (Ident "bar"))
                      (Ident "baz"))
                 (Int 1)
-  readOne "foo.(bar baz)[1]" $
+  "foo.(bar baz)[1]" --->
       Subscript (Sexp [Dot (Ident "foo")
                            (Ident "bar"),
                       Ident "baz"])
                 (Int 1)
-  readOne "foo.(bar baz)[1].(a b)" $
+  "foo.(bar baz)[1].(a b)" --->
       Sexp [Dot (Subscript (Sexp [Dot (Ident "foo")
                                       (Ident "bar"),
                                  Ident "baz"])
                            (Int 1))
                 (Ident "a"),
            Ident "b"]
-  readOne "[foo.bar[2].baz]" $
+  "[foo.bar[2].baz]" --->
       Vector [Dot (Subscript (Dot (Ident "foo")
                                   (Ident "bar"))
                              (Int 2))
                   (Ident "baz")]
-  readOne "[1][2][3]" $
+  "[1][2][3]" --->
       Subscript (Subscript (Vector [Int 1])
                            (Int 2))
                 (Int 3)
-  readOne "foo[bar] [baz]" $
+  "foo[bar] [baz]" --->
       Sexp [Subscript (Ident "foo")
                       (Ident "bar"),
             Vector [Ident "baz"]]
 
 case_string :: Assertion
 case_string = do
-  readOne "\"~foo\"" $ Sexp [Ident "str",Ident "foo"]
-  readOne "\"~1\"" $ Sexp [Ident "str",Int 1]
-  readOne "\"~foo bar\"" $ Sexp [Ident "str",Ident "foo",Str " bar"]
-  readOne "\"foo ~bar baz ~qux ~alpha\"" $
+  "\"~foo\"" ---> Sexp [Ident "str",Ident "foo"]
+  "\"~1\"" ---> Sexp [Ident "str",Int 1]
+  "\"~foo bar\"" ---> Sexp [Ident "str",Ident "foo",Str " bar"]
+  "\"foo ~bar baz ~qux ~alpha\"" --->
       Sexp [Ident "str",Str "foo ",Ident "bar",Str " baz ",Ident "qux",Str " ",
             Ident "alpha"]
-  readOne "\"~\"str\"\"" $ Str "str"
-  readOne "\"~(foo bar baz)\"" $
+  "\"~\"str\"\"" ---> Str "str"
+  "\"~(foo bar baz)\"" --->
       Sexp [Ident "str",Sexp [Ident "foo",Ident "bar",Ident "baz"]]
-  readOne "\"~(1 + 2)\"" $
+  "\"~(1 + 2)\"" --->
       Sexp [Ident "str",Binop "+" (Int 1) (Int 2)]
-  readOne "\"~[1 2 3]\"" $ Sexp [Ident "str",Vector [Int 1,Int 2,Int 3]]
-  readOne "\"~foo.bar\"" $ Sexp [Ident "str",Dot (Ident "foo") (Ident "bar")]
-  readOne "\"~(foo.bar)\"" $
+  "\"~[1 2 3]\"" ---> Sexp [Ident "str",Vector [Int 1,Int 2,Int 3]]
+  "\"~foo.bar\"" ---> Sexp [Ident "str",Dot (Ident "foo") (Ident "bar")]
+  "\"~(foo.bar)\"" --->
       Sexp [Ident "str",Sexp [Dot (Ident "foo") (Ident "bar")]]
-  readOne "\"~foo.bar .baz\"" $
+  "\"~foo.bar .baz\"" --->
       Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str " .baz"]
-  readOne "\"~foo.bar[2]\"" $
+  "\"~foo.bar[2]\"" --->
       Sexp [Ident "str",Subscript (Dot (Ident "foo") (Ident "bar")) (Int 2)]
-  readOne "\"~foo.bar.\"" $
+  "\"~foo.bar.\"" --->
       Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str "."]
-  readOne "\"~foo.bar [2]\"" $
+  "\"~foo.bar [2]\"" --->
       Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str " [2]"]
-  readOne "\"~foo.bar.baz[2].qux\"" $
+  "\"~foo.bar.baz[2].qux\"" --->
       Sexp [Ident "str",Dot (Subscript (Dot (Dot (Ident "foo")
                                                  (Ident "bar"))
                                             (Ident "baz"))
                                        (Int 2))
                             (Ident "qux")]
+  "\"\"" ---> Str ""
+  "\"foo\n bar\"" ---> Sexp [Ident "str",Str "foo",Str "\n",Str "bar"]
+  "\"foo\n ~bar\"" ---> Sexp [Ident "str",Str "foo",Str "\n",Ident "bar"]
+  "\"foo\n \"" ---> Sexp [Ident "str",Str "foo",Str "\n"]
+  "\"\n foo\"" ---> Sexp [Ident "str",Str "\n", Str "foo"]
+  "\"\n \"" ---> Str "\n"
+  
 
 readerTests :: Test
 readerTests = $testGroupGenerator

@@ -23,8 +23,7 @@
 -- even if advised of the possibility of such damage.
 
 module Token (
-  stringLetter,
-  stringEscape,
+  stringComponent,
   identifier,
   intOrFloat,
   initialHyphen,
@@ -35,7 +34,6 @@ module Token (
 
 import           Datatypes
 import           Text.Parsec
-import Text.Parsec.Indent (withPos)
 
 import qualified Data.Char        as Char
 import qualified Text.Parsec.Char as Parsec.Char
@@ -129,8 +127,18 @@ number base baseDigit = do
   let n = foldl (\x d -> base*x + toInteger (Char.digitToInt d)) 0 digits
   seq n (return n)
 
+-- | Parses a component of string: a regular letter or escape sequence.
+stringComponent :: CantorParser Form
+stringComponent = do
+  str <- many1 stringChar
+  return $ Str $ foldr (maybe id (:)) "" str
+  where stringChar = do c <- satisfy stringLetter
+                        return $ Just c
+                     <|> stringEscape
+                     <?> "string character"
+
 stringLetter :: Char -> Bool
-stringLetter c = c /= '"' && c /= '\\' && c /= '~' && (c > '\026' || c == '\n')
+stringLetter c = c /= '"' && c /= '\\' && c /= '~' && c > '\026'
 
 stringEscape :: CantorParser (Maybe Char)
 stringEscape = char '\\' >> escape

@@ -10,14 +10,13 @@ module Reader (
   readForms,
   showForms,
 ) where
-
 import           Control.Applicative ((<$>))
 import           Data.List           (intercalate)
 import           Datatypes
 import           Text.Parsec
 import           Text.Parsec.Expr    (Assoc(..), Operator(..),
                                       buildExpressionParser)
-import           Text.Parsec.Indent  (checkIndent, runIndent, withBlock)
+import           Text.Parsec.Indent  (checkIndent, runIndent, withBlock, withPos)
 import           Token
 
 -- | Parses a string and returns a list of top-level Forms present in the
@@ -27,10 +26,10 @@ import           Token
 readForms :: String -> Either ReadError [Form]
 readForms ""     = Right []
 readForms input = runParse topLevel (input ++ "\n")
-  where topLevel = do
-          forms <- many indentedForm
-          eof
-          return forms
+  where topLevel = do skipSpaces
+                      forms <- withPos $ many indentedForm
+                      eof
+                      return forms
 
 -- | Converts a list of forms into a String representation. The resulting string
 -- will consist of legal Cantor syntax and will be able to be parsed by
@@ -86,32 +85,29 @@ readForm = identifier        <|>
 -- | Parses a string literal
 stringLiteral :: CantorParser Form
 stringLiteral = do
+  column <- sourceColumn <$> getPosition
   char '"'  <?> "string literal"
-  forms <- many (stringUnquote <|> stringComponent)
+  forms <- many (stringUnquote <|> stringComponent <|> stringNewline column)
   char '"'
   skipSpaces
   return $ simplify forms
   where simplify []          = Str ""
         simplify [s@(Str _)] = s
-        simplify xs          = Sexp (Ident "str" : xs)
+        simplify xs          = Sexp $ Ident "str" : xs
+
+stringNewline :: Column -> CantorParser Form
+stringNewline column = do
+  char '\n' <?> "line continuation"
+  string (replicate column ' ') <?> "string literal indentation"
+  return $ Str "\n"
 
 -- | Parses a string unquote, a ~ followed by any complex form not containing
 -- whitespace.
 stringUnquote :: CantorParser Form
 stringUnquote = do
-  char '~'
+  char '~' <?> "string unquote"
   form <- withSkippedWhitespace "" (complexFormSkipping "")
   return form
-
--- | Parses a component of string: a regular letter or escape sequence.
-stringComponent :: CantorParser Form
-stringComponent = do
-  str <- many1 stringChar
-  return $ Str $ foldr (maybe id (:)) "" str
-  where stringChar = do c <- satisfy stringLetter
-                        return $ Just c
-                     <|> stringEscape
-                     <?> "string character"
 
 -- | Makes a parser which looks for an opening delimiter, then applies the
 -- supplied parser, then looks for a closing delimiter.
