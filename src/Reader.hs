@@ -4,7 +4,6 @@
 -- implementing parser functionality for transforming inputs such as strings
 -- into valid parse trees consisting of Forms.
 module Reader (
-  Form(..),
   ReadError,
   InputName,
   readForms,
@@ -42,13 +41,14 @@ showForm (Int i)   = show i
 showForm (Float f) = show f
 showForm (Ident i) = i
 showForm (Str s) = show s
-showForm (Sexp s) = "(" ++ unwords (map showForm s) ++ ")"
-showForm (Map s) = "{" ++ unwords (map showForm s) ++ "}"
-showForm (Vector s) = "[" ++ unwords (map showForm s) ++ "]"
-showForm (Dot left right) = showForm left ++ "." ++ showForm right
+showForm (Sexp []) = "()"
+showForm (Sexp (Ident "Map":xs)) = "{" ++ unwords (map showForm xs) ++ "}"
+showForm (Sexp (Ident "Vector":xs)) = "[" ++ unwords (map showForm xs) ++ "]"
+showForm (Sexp [Ident "dot",left,right]) = showForm left ++ "." ++ showForm right
+showForm (Sexp [Ident "at",left,right]) = showForm left ++ "[" ++ showForm right ++ "]"
+showForm (Sexp xs) = "(" ++ unwords (map showForm (xs)) ++ ")"
 showForm (Binop s left right) = "(" ++ showForm left ++ " " ++ s ++ " " ++
                                 showForm right ++ ")"
-showForm (Subscript left right) = showForm left ++ "[" ++ showForm right ++ "]"
 
 -- | Uses the specified parser to parse a string, returning the result or a
 -- ParseError.
@@ -144,12 +144,12 @@ readBetween left right name parser = do
 
 -- | Reads a vector literal.
 readVector :: CantorParser Form
-readVector = Vector <$>
+readVector = makeVector <$>
     readBetween '[' ']' "vector literal" (many complexForm)
 
 -- | Reads a map literal.
 readMap :: CantorParser Form
-readMap = Map <$>
+readMap = makeMap <$>
     readBetween '{' '}' "map literal" (many complexForm)
 
 -- | Reads a parenthesized expression. If a single form is present in such an
@@ -158,7 +158,7 @@ readMap = Map <$>
 readParenthesized :: CantorParser Form
 readParenthesized = try singleForm <|> multipleForms
   where readParens    = readBetween '(' ')' "expression"
-        singleForm    = (Sexp . return) <$> readParens complexForm
+        singleForm    = Sexp . return <$> readParens complexForm
         multipleForms = readParens $ option (Sexp []) expression
 
 -- | Creates an operator parser for an infix, left associative operator with
@@ -198,7 +198,7 @@ withSubscriptOperators parser = do
   parsed <- withSkippedWhitespace "" parser
   subscripts <- many subscript
   skipSpaces
-  return $ foldl1 Subscript (parsed : subscripts)
+  return $ foldl1 makeSubscript (parsed : subscripts)
 
 -- | Parses a method call, a dot followed by 1) an identifier or 2) a
 -- parenthesized expression.
@@ -220,9 +220,9 @@ complexFormSkipping s = do
   skipSpaces
   methodCalls <- many (try (methodCall s))
   return $ foldl1 fold (expr : methodCalls)
-  where fold accum ident@(Ident _)    = Dot accum ident
-        fold accum (Sexp (x:xs)) = Sexp $ Dot accum x : xs
-        fold accum (Subscript x y) = Subscript (fold accum x) y
+  where fold accum ident@(Ident _)    = makeDot accum ident
+        fold accum (Sexp [Ident "at",x,y]) = makeSubscript (fold accum x) y
+        fold accum (Sexp (x:xs)) = Sexp $ makeDot accum x : xs
         fold _ form = error ("Unexpected token in complexForm " ++ show form)
 
 -- | Parses a complex form, skipping spaces and newlines after the '.' operator

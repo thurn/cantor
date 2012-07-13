@@ -14,13 +14,21 @@ data Form = Int Integer
           | Float Double
           | Str String
           | Ident String
-          | Sexp [Form]
+          | Sexp [Form] 
           | Binop String Form Form
-          | Map [Form]
-          | Vector [Form]
-          | Dot Form Form
-          | Subscript Form Form
             deriving (Eq, Show, Read)
+
+makeVector :: [Form] -> Form
+makeVector = Sexp . (Ident "Vector" :)
+
+makeMap :: [Form] -> Form
+makeMap = Sexp . (Ident "Map" :)
+
+makeDot :: Form -> Form -> Form
+makeDot left right = Sexp [Ident "dot", left, right]
+
+makeSubscript :: Form -> Form -> Form
+makeSubscript left right = Sexp [Ident "at", left, right]
             
 -- | Indicates a failure during parsing.
 type ReadError = Parsec.ParseError

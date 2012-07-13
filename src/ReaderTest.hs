@@ -17,6 +17,7 @@ import           Test.HUnit                           (Assertion, assertEqual,
     assertFailure, assertBool)
 import           Test.QuickCheck                      (Arbitrary, Gen, sized,
     oneof, arbitrary, frequency, listOf, elements, vectorOf, suchThat)
+import Datatypes
 
 instance Arbitrary Form where
   arbitrary = sized arbitraryForm
@@ -57,10 +58,10 @@ arbitraryBinop genForm1 genForm2 = Binop <$> str <*> genForm1 <*> genForm2
                          "/=", "|=", "&=", "|"]
 
 arbitraryDot :: Gen Form -> Gen Form
-arbitraryDot genForm = Dot <$> genForm <*> (Ident <$> arbitraryIdent)
+arbitraryDot genForm = makeDot <$> genForm <*> (Ident <$> arbitraryIdent)
 
 arbitrarySubscript :: Gen Form -> Gen Form -> Gen Form
-arbitrarySubscript genForm1 genForm2 = Subscript <$> genForm1 <*> genForm2
+arbitrarySubscript genForm1 genForm2 = makeSubscript <$> genForm1 <*> genForm2
 
 arbitraryForm :: Int -> Gen Form
 arbitraryForm 0 = arbitraryAtom
@@ -78,7 +79,7 @@ arbitraryForm n = frequency [
   ]
   where nextRandom = arbitraryForm (n `div` 2)
         listOfSize size = do
-          fn <- elements [Map, Vector, Sexp]
+          fn <- elements [makeMap, makeVector, Sexp]
           fn <$> vectorOf size nextRandom
 
 prop_stringConcat :: ArbitraryString -> ArbitraryString -> Bool
@@ -174,11 +175,11 @@ prop_validSyntax :: ValidSyntax -> Bool
 prop_validSyntax (BalancedString s) = readWithOutcome True s
 prop_validSyntax (ArbitraryIdent s) = readAndCheck s (== [Ident s])
 prop_validSyntax (ArbitraryVector s) = readAndCheck s isVector
-  where isVector [Vector _] = True
+  where isVector [Sexp (Ident "Vector":_)] = True
         isVector _          = False
 prop_validSyntax (ArbitraryDict s) = readAndCheck s isMap
-  where isMap [Map _] = True
-        isMap _       = False
+  where isMap [Sexp (Ident "Map":_)] = True
+        isMap _                      = False
 
 (--->) :: String -> Form -> Assertion
 input ---> expected = case readForms input of
@@ -189,15 +190,15 @@ input ---> expected = case readForms input of
 
 case_vector :: Assertion
 case_vector = do
-  "[]" ---> Vector []
-  "[1]" ---> Vector [Int 1]
-  "[1 2]" ---> Vector [Int 1, Int 2]
+  "[]" ---> makeVector []
+  "[1]" ---> makeVector [Int 1]
+  "[1 2]" ---> makeVector [Int 1, Int 2]
 
 case_dict :: Assertion
 case_dict = do
-  "{}" ---> Map []
-  "{1}" ---> Map [Int 1]
-  "{1 2}" ---> Map [Int 1, Int 2]
+  "{}" ---> makeMap []
+  "{1}" ---> makeMap [Int 1]
+  "{1 2}" ---> makeMap [Int 1, Int 2]
 
 readSame :: String -> String -> Assertion
 x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
@@ -292,35 +293,35 @@ case_operators = do
       Binop "*" (Binop "*" (Int 1) (Int 1)) (Int 2)
   "print 1 + print 2" --->
       Binop "+" (Sexp [Ident "print",Int 1]) (Sexp [Ident "print",Int 2])
-  "foo.bar" ---> Dot (Ident "foo") (Ident "bar")
-  "foo. bar" ---> Dot (Ident "foo") (Ident "bar")
-  "foo .bar" ---> Dot (Ident "foo") (Ident "bar")
+  "foo.bar" ---> makeDot (Ident "foo") (Ident "bar")
+  "foo. bar" ---> makeDot (Ident "foo") (Ident "bar")
+  "foo .bar" ---> makeDot (Ident "foo") (Ident "bar")
   "foo.bar.baz + 2" --->
       Binop "+"
-          (Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz"))
+          (makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz"))
           (Int 2)
   "print foo.bar.baz" --->
       Sexp [Ident "print",
-            Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")]
+            makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz")]
   "1 +\n1" ---> Binop "+" (Int 1) (Int 1)
-  "foo .\nbar" ---> Dot (Ident "foo") (Ident "bar")
-  "foo.\nbar.\nbaz" ---> Dot (Dot (Ident "foo") (Ident "bar")) (Ident "baz")
-  "foo.bar 1 2" ---> Sexp [Dot (Ident "foo") (Ident "bar"),Int 1,Int 2]
+  "foo .\nbar" ---> makeDot (Ident "foo") (Ident "bar")
+  "foo.\nbar.\nbaz" ---> makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz")
+  "foo.bar 1 2" ---> Sexp [makeDot (Ident "foo") (Ident "bar"),Int 1,Int 2]
   "bar foo.baz 1 2" --->
-      Sexp [Ident "bar",Dot (Ident "foo") (Ident "baz"),Int 1,Int 2]
+      Sexp [Ident "bar",makeDot (Ident "foo") (Ident "baz"),Int 1,Int 2]
   "list.filter foo.map baz.sort" --->
-      Sexp [Dot (Ident "list") (Ident "filter"),
-            Dot (Ident "foo") (Ident "map"),
-            Dot (Ident "baz") (Ident "sort")]
+      Sexp [makeDot (Ident "list") (Ident "filter"),
+            makeDot (Ident "foo") (Ident "map"),
+            makeDot (Ident "baz") (Ident "sort")]
   "(list.(filter foo).(map baz).sort)" --->
-      Sexp [Dot (Sexp [Dot (Sexp [Dot (Ident "list")
+      Sexp [makeDot (Sexp [makeDot (Sexp [makeDot (Ident "list")
                                       (Ident "filter"),
                                   Ident "foo"])
                            (Ident "map"),
                        Ident "baz"])
                 (Ident "sort")]
   "list.(filter foo).(map baz).(sort)" --->
-      Dot (Sexp [Dot (Sexp [Dot (Ident "list")
+      makeDot (Sexp [makeDot (Sexp [makeDot (Ident "list")
                                 (Ident "filter"),
                             Ident "foo"])
                      (Ident "map"),
@@ -329,67 +330,67 @@ case_operators = do
 
 case_subscript :: Assertion
 case_subscript = do
-  "foo[2]" ---> Subscript (Ident "foo") (Int 2)
+  "foo[2]" ---> makeSubscript (Ident "foo") (Int 2)
   "foo[2] + bar[2]" --->
-      Binop "+" (Subscript (Ident "foo")
+      Binop "+" (makeSubscript (Ident "foo")
                            (Int 2))
-                (Subscript (Ident "bar")
+                (makeSubscript (Ident "bar")
                            (Int 2))
   "(foo + bar)[2]" --->
-    Subscript (Binop "+" (Ident "foo")
+    makeSubscript (Binop "+" (Ident "foo")
                          (Ident "bar"))
               (Int 2)
   "foo.bar[1]" --->
-      Subscript (Dot (Ident "foo")
+      makeSubscript (makeDot (Ident "foo")
                      (Ident "bar"))
                 (Int 1)
   "foo.bar[1].baz" --->
-      Dot (Subscript (Dot (Ident "foo")
+      makeDot (makeSubscript (makeDot (Ident "foo")
                           (Ident "bar"))
                      (Int 1))
           (Ident "baz")
   "foo.bar[1].baz[2]" --->
-      Subscript (Dot (Subscript (Dot (Ident "foo")
+      makeSubscript (makeDot (makeSubscript (makeDot (Ident "foo")
                                      (Ident "bar"))
                                 (Int 1))
                      (Ident "baz"))
                 (Int 2)
   "foo.bar[1][2].baz" --->
-      Dot (Subscript (Subscript (Dot (Ident "foo")
+      makeDot (makeSubscript (makeSubscript (makeDot (Ident "foo")
                                      (Ident "bar"))
                                 (Int 1))
                      (Int 2))
           (Ident "baz")
   "foo.bar.baz[1]" --->
-      Subscript (Dot (Dot (Ident "foo")
+      makeSubscript (makeDot (makeDot (Ident "foo")
                           (Ident "bar"))
                      (Ident "baz"))
                 (Int 1)
   "foo.(bar baz)[1]" --->
-      Subscript (Sexp [Dot (Ident "foo")
+      makeSubscript (Sexp [makeDot (Ident "foo")
                            (Ident "bar"),
                       Ident "baz"])
                 (Int 1)
   "foo.(bar baz)[1].(a b)" --->
-      Sexp [Dot (Subscript (Sexp [Dot (Ident "foo")
+      Sexp [makeDot (makeSubscript (Sexp [makeDot (Ident "foo")
                                       (Ident "bar"),
                                  Ident "baz"])
                            (Int 1))
                 (Ident "a"),
            Ident "b"]
   "[foo.bar[2].baz]" --->
-      Vector [Dot (Subscript (Dot (Ident "foo")
-                                  (Ident "bar"))
-                             (Int 2))
-                  (Ident "baz")]
+      makeVector [makeDot (makeSubscript (makeDot (Ident "foo")
+                                      (Ident "bar"))
+                                 (Int 2))
+                      (Ident "baz")]
   "[1][2][3]" --->
-      Subscript (Subscript (Vector [Int 1])
+      makeSubscript (makeSubscript (makeVector [Int 1])
                            (Int 2))
                 (Int 3)
   "foo[bar] [baz]" --->
-      Sexp [Subscript (Ident "foo")
+      Sexp [makeSubscript (Ident "foo")
                       (Ident "bar"),
-            Vector [Ident "baz"]]
+            makeVector [Ident "baz"]]
 
 case_string :: Assertion
 case_string = do
@@ -404,20 +405,20 @@ case_string = do
       Sexp [Ident "str",Sexp [Ident "foo",Ident "bar",Ident "baz"]]
   "\"~(1 + 2)\"" --->
       Sexp [Ident "str",Binop "+" (Int 1) (Int 2)]
-  "\"~[1 2 3]\"" ---> Sexp [Ident "str",Vector [Int 1,Int 2,Int 3]]
-  "\"~foo.bar\"" ---> Sexp [Ident "str",Dot (Ident "foo") (Ident "bar")]
+  "\"~[1 2 3]\"" ---> Sexp [Ident "str",makeVector [Int 1,Int 2,Int 3]]
+  "\"~foo.bar\"" ---> Sexp [Ident "str",makeDot (Ident "foo") (Ident "bar")]
   "\"~(foo.bar)\"" --->
-      Sexp [Ident "str",Sexp [Dot (Ident "foo") (Ident "bar")]]
+      Sexp [Ident "str",Sexp [makeDot (Ident "foo") (Ident "bar")]]
   "\"~foo.bar .baz\"" --->
-      Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str " .baz"]
+      Sexp [Ident "str",makeDot (Ident "foo") (Ident "bar"),Str " .baz"]
   "\"~foo.bar[2]\"" --->
-      Sexp [Ident "str",Subscript (Dot (Ident "foo") (Ident "bar")) (Int 2)]
+      Sexp [Ident "str",makeSubscript (makeDot (Ident "foo") (Ident "bar")) (Int 2)]
   "\"~foo.bar.\"" --->
-      Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str "."]
+      Sexp [Ident "str",makeDot (Ident "foo") (Ident "bar"),Str "."]
   "\"~foo.bar [2]\"" --->
-      Sexp [Ident "str",Dot (Ident "foo") (Ident "bar"),Str " [2]"]
+      Sexp [Ident "str",makeDot (Ident "foo") (Ident "bar"),Str " [2]"]
   "\"~foo.bar.baz[2].qux\"" --->
-      Sexp [Ident "str",Dot (Subscript (Dot (Dot (Ident "foo")
+      Sexp [Ident "str",makeDot (makeSubscript (makeDot (makeDot (Ident "foo")
                                                  (Ident "bar"))
                                             (Ident "baz"))
                                        (Int 2))
