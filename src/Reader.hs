@@ -78,6 +78,7 @@ readForm = identifier        <|>
            intOrFloat        <|>
            initialHyphen     <|>
            stringLiteral     <|>
+           cppLiteral        <|>
            readParenthesized <|>
            readVector        <|>
            readMap
@@ -85,8 +86,8 @@ readForm = identifier        <|>
 -- | Parses a string literal
 stringLiteral :: CantorParser Form
 stringLiteral = do
+  char '"' <?> "string literal"
   column <- sourceColumn <$> getPosition
-  char '"'  <?> "string literal"
   forms <- many (stringUnquote <|> stringComponent <|> stringNewline column)
   char '"'
   skipSpaces
@@ -95,17 +96,32 @@ stringLiteral = do
         simplify [s@(Str _)] = s
         simplify xs          = Sexp $ Ident "str" : xs
 
+-- | Parses a c++ literal
+cppLiteral :: CantorParser Form
+cppLiteral = do
+  string "#`" <?> "c++ literal"
+  column <- sourceColumn <$> getPosition
+  forms <- many (stringUnquote <|> cppComponent <|> stringNewline column)
+  char '`'
+  skipSpaces
+  return $ Sexp [Ident "cpp", simplify forms]
+  where simplify []          = Str ""
+        simplify [s@(Str _)] = s
+        simplify xs          = Sexp $ Ident "str" : xs
+        cppChar c = c /= '`' && c /= '~' && c > '\026'
+        cppComponent = Str <$> many1 (satisfy cppChar)
+
 stringNewline :: Column -> CantorParser Form
 stringNewline column = do
   char '\n' <?> "line continuation"
-  string (replicate column ' ') <?> "string literal indentation"
+  string (replicate (column - 1) ' ') <?> "indentation"
   return $ Str "\n"
 
 -- | Parses a string unquote, a ~ followed by any complex form not containing
 -- whitespace.
 stringUnquote :: CantorParser Form
 stringUnquote = do
-  char '~' <?> "string unquote"
+  char '~' <?> "unquote"
   form <- withSkippedWhitespace "" (complexFormSkipping "")
   return form
 

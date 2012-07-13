@@ -222,7 +222,10 @@ case_parseError = mapM_ assertParseError [
   "\"foo\n~bar\"",
   "\"foo\n\"",
   "\"\nfoo\"",
-  "\"\n\""]
+  "\"\n\"",
+  "#`foo\nbar`",
+  "#`foo\n bar`"
+  ]
 
 case_indent :: Assertion
 case_indent = do
@@ -425,7 +428,15 @@ case_string = do
   "\"foo\n \"" ---> Sexp [Ident "str",Str "foo",Str "\n"]
   "\"\n foo\"" ---> Sexp [Ident "str",Str "\n", Str "foo"]
   "\"\n \"" ---> Str "\n"
-  
+
+case_cppLiteral :: Assertion
+case_cppLiteral = do
+  "#``" ---> Sexp [Ident "cpp",Str ""]
+  "#`foo`" ---> Sexp [Ident "cpp",Str "foo"]
+  "#`foo\n  bar`" --->
+      Sexp [Ident "cpp",Sexp [Ident "str",Str "foo",Str "\n",Str "bar"]]
+  "#`~foo`" ---> Sexp [Ident "cpp",Sexp [Ident "str",Ident "foo"]]
+  "#`\\n`" ---> Sexp [Ident "cpp",Str "\\n"]
 
 readerTests :: Test
 readerTests = $testGroupGenerator
