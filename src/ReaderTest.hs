@@ -44,7 +44,7 @@ arbitraryIdent = do
   return $ c:cs
 
 arbitraryString :: Gen String
-arbitraryString = suchThat arbitrary (all (/= '~'))
+arbitraryString = suchThat arbitrary ('~' `notElem`)
 
 newtype ArbitraryString = ArbitraryString String deriving (Show, Eq)
 
@@ -52,7 +52,7 @@ instance Arbitrary ArbitraryString where
   arbitrary = ArbitraryString <$> arbitraryString
 
 arbitraryBinop :: Gen Form -> Gen Form -> Gen Form
-arbitraryBinop genForm1 genForm2 = Binop <$> str <*> genForm1 <*> genForm2
+arbitraryBinop genForm1 genForm2 = makeBinop <$> str <*> genForm1 <*> genForm2
   where str = elements  ["*", "/", "%", "+", "<", ">", "<=", ">=", "==", "!=",
                          "&&", "||", "<<", ">>", "|>", "<|", "=", "+=", "*=",
                          "/=", "|=", "&=", "|"]
@@ -94,7 +94,7 @@ showDropDelimiters = tail . init . show
 
 prop_stringUnquote :: ArbitraryString -> Form -> ArbitraryString -> Bool
 prop_stringUnquote (ArbitraryString s1) form (ArbitraryString s2) =
-    readAndCheck generated $ (== [expected]) . (map dropEmptyStrs)
+    readAndCheck generated $ (== [expected]) . map dropEmptyStrs
   where generated = "\"" ++ showDropDelimiters s1 ++ "~" ++ showForms [form] ++
                     "\\&" ++ showDropDelimiters s2 ++ "\""
         expected = dropEmptyStrs $ Exp (Ident "str") [Str s1, form, Str s2]
@@ -283,30 +283,31 @@ case_parens = do
   "(foo bar)" ---> Exp (Ident "foo") [Ident "bar"]
   "((foo))" ---> Exp (Exp (Ident "foo") []) []
   "((foo bar))" ---> Exp (Exp (Ident "foo") [Ident "bar"]) []
-  "(foo + bar)" ---> Binop "+" (Ident "foo") (Ident "bar")
-  "((foo + bar))" ---> Exp (Binop "+" (Ident "foo") (Ident "bar")) []
+  "(foo + bar)" ---> makeBinop "+" (Ident "foo") (Ident "bar")
+  "((foo + bar))" ---> Exp (makeBinop "+" (Ident "foo") (Ident "bar")) []
 
 case_operators :: Assertion
 case_operators = do
   "1 + 1 * 2" --->
-      Binop "+" (Int 1) (Binop "*" (Int 1) (Int 2))
+      makeBinop "+" (Int 1) (makeBinop "*" (Int 1) (Int 2))
   "1 * 1 + 2" --->
-      Binop "+" (Binop "*" (Int 1) (Int 1)) (Int 2)
+      makeBinop "+" (makeBinop "*" (Int 1) (Int 1)) (Int 2)
   "1 * 1 * 2" --->
-      Binop "*" (Binop "*" (Int 1) (Int 1)) (Int 2)
+      makeBinop "*" (makeBinop "*" (Int 1) (Int 1)) (Int 2)
   "print 1 + print 2" --->
-      Binop "+" (Exp (Ident "print") [Int 1]) (Exp (Ident "print") [Int 2])
+      makeBinop "+" (Exp (Ident "print") [Int 1]) (Exp (Ident "print") [Int 2])
   "foo.bar" ---> makeDot (Ident "foo") (Ident "bar")
   "foo. bar" ---> makeDot (Ident "foo") (Ident "bar")
   "foo .bar" ---> makeDot (Ident "foo") (Ident "bar")
   "foo.bar.baz + 2" --->
-      Binop "+"
+      makeBinop "+"
           (makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz"))
           (Int 2)
   "print foo.bar.baz" --->
-      Exp (Ident "print")
-            [makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz")]
-  "1 +\n1" ---> Binop "+" (Int 1) (Int 1)
+      Exp (Ident "print") [makeDot (makeDot (Ident "foo")
+                                            (Ident "bar"))
+                                   (Ident "baz")]
+  "1 +\n1" ---> makeBinop "+" (Int 1) (Int 1)
   "foo .\nbar" ---> makeDot (Ident "foo") (Ident "bar")
   "foo.\nbar.\nbaz" ---> makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz")
   "foo.bar 1 2" ---> Exp (makeDot (Ident "foo") (Ident "bar")) [Int 1,Int 2]
@@ -318,83 +319,83 @@ case_operators = do
             makeDot (Ident "baz") (Ident "sort")]
   "(list.(filter foo).(map baz).sort)" --->
       Exp (makeDot (Exp (makeDot (Exp (makeDot (Ident "list")
-                                                  (Ident "filter"))
-                                  [Ident "foo"])
-                                  (Ident "map"))
-                       [Ident "baz"])
-                       (Ident "sort"))
-                       []
+                                                (Ident "filter"))
+                                      [Ident "foo"])
+                                 (Ident "map"))
+                        [Ident "baz"])
+                   (Ident "sort"))
+          []
   "list.(filter foo).(map baz).(sort)" --->
       makeDot (Exp (makeDot (Exp (makeDot (Ident "list")
-                                (Ident "filter"))
-                            [Ident "foo"])
-                     (Ident "map"))
-                [Ident "baz"])
-          (Ident "sort")
+                                          (Ident "filter"))
+                                 [Ident "foo"])
+                            (Ident "map"))
+                   [Ident "baz"])
+              (Ident "sort")
 
 case_subscript :: Assertion
 case_subscript = do
   "foo[2]" ---> makeSubscript (Ident "foo") (Int 2)
   "foo[2] + bar[2]" --->
-      Binop "+" (makeSubscript (Ident "foo")
-                           (Int 2))
-                (makeSubscript (Ident "bar")
-                           (Int 2))
+      makeBinop "+" (makeSubscript (Ident "foo")
+                                   (Int 2))
+                    (makeSubscript (Ident "bar")
+                                   (Int 2))
   "(foo + bar)[2]" --->
-    makeSubscript (Binop "+" (Ident "foo")
-                         (Ident "bar"))
-              (Int 2)
+    makeSubscript (makeBinop "+" (Ident "foo")
+                                 (Ident "bar"))
+                  (Int 2)
   "foo.bar[1]" --->
       makeSubscript (makeDot (Ident "foo")
-                     (Ident "bar"))
-                (Int 1)
+                             (Ident "bar"))
+                    (Int 1)
   "foo.bar[1].baz" --->
       makeDot (makeSubscript (makeDot (Ident "foo")
-                          (Ident "bar"))
-                     (Int 1))
-          (Ident "baz")
+                                      (Ident "bar"))
+                             (Int 1))
+              (Ident "baz")
   "foo.bar[1].baz[2]" --->
       makeSubscript (makeDot (makeSubscript (makeDot (Ident "foo")
-                                     (Ident "bar"))
-                                (Int 1))
-                     (Ident "baz"))
-                (Int 2)
+                                                     (Ident "bar"))
+                                            (Int 1))
+                             (Ident "baz"))
+                    (Int 2)
   "foo.bar[1][2].baz" --->
       makeDot (makeSubscript (makeSubscript (makeDot (Ident "foo")
-                                     (Ident "bar"))
-                                (Int 1))
-                     (Int 2))
-          (Ident "baz")
+                                                     (Ident "bar"))
+                                            (Int 1))
+                             (Int 2))
+              (Ident "baz")
   "foo.bar.baz[1]" --->
       makeSubscript (makeDot (makeDot (Ident "foo")
-                          (Ident "bar"))
-                     (Ident "baz"))
-                (Int 1)
+                                      (Ident "bar"))
+                             (Ident "baz"))
+                    (Int 1)
   "foo.(bar baz)[1]" --->
       makeSubscript (Exp (makeDot (Ident "foo")
-                           (Ident "bar"))
-                      [Ident "baz"])
-                (Int 1)
+                                  (Ident "bar"))
+                         [Ident "baz"])
+                    (Int 1)
   "foo.(bar baz)[1].(a b)" --->
       Exp (makeDot (makeSubscript (Exp (makeDot (Ident "foo")
-                                      (Ident "bar"))
-                                 [Ident "baz"])
-                           (Int 1))
-                (Ident "a"))
-           [Ident "b"]
+                                                (Ident "bar"))
+                                       [Ident "baz"])
+                                  (Int 1))
+                   (Ident "a"))
+          [Ident "b"]
   "[foo.bar[2].baz]" --->
       makeVector [makeDot (makeSubscript (makeDot (Ident "foo")
-                                      (Ident "bar"))
-                                 (Int 2))
-                      (Ident "baz")]
+                                                  (Ident "bar"))
+                                         (Int 2))
+                          (Ident "baz")]
   "[1][2][3]" --->
       makeSubscript (makeSubscript (makeVector [Int 1])
-                           (Int 2))
-                (Int 3)
+                                   (Int 2))
+                    (Int 3)
   "foo[bar] [baz]" --->
       Exp (makeSubscript (Ident "foo")
-                      (Ident "bar"))
-            [makeVector [Ident "baz"]]
+                         (Ident "bar"))
+          [makeVector [Ident "baz"]]
 
 case_string :: Assertion
 case_string = do
@@ -403,12 +404,12 @@ case_string = do
   "\"~foo bar\"" ---> Exp (Ident "str") [Ident "foo",Str " bar"]
   "\"foo ~bar baz ~qux ~alpha\"" --->
       Exp (Ident "str") [Str "foo ",Ident "bar",Str " baz ",Ident "qux",Str " ",
-            Ident "alpha"]
+                         Ident "alpha"]
   "\"~\"str\"\"" ---> Str "str"
   "\"~(foo bar baz)\"" --->
       Exp (Ident "str") [Exp (Ident "foo") [Ident "bar",Ident "baz"]]
   "\"~(1 + 2)\"" --->
-      Exp (Ident "str") [Binop "+" (Int 1) (Int 2)]
+      Exp (Ident "str") [makeBinop "+" (Int 1) (Int 2)]
   "\"~[1 2 3]\"" ---> Exp (Ident "str") [makeVector [Int 1,Int 2,Int 3]]
   "\"~foo.bar\"" ---> Exp (Ident "str") [makeDot (Ident "foo") (Ident "bar")]
   "\"~(foo.bar)\"" --->
@@ -423,10 +424,10 @@ case_string = do
       Exp (Ident "str") [makeDot (Ident "foo") (Ident "bar"),Str " [2]"]
   "\"~foo.bar.baz[2].qux\"" --->
       Exp (Ident "str") [makeDot (makeSubscript (makeDot (makeDot (Ident "foo")
-                                                 (Ident "bar"))
-                                            (Ident "baz"))
-                                       (Int 2))
-                            (Ident "qux")]
+                                                                  (Ident "bar"))
+                                                         (Ident "baz"))
+                                                (Int 2))
+                                 (Ident "qux")]
   "\"\"" ---> Str ""
   "\"foo\n bar\"" ---> Exp (Ident "str") [Str "foo",Str "\n",Str "bar"]
   "\"foo\n ~bar\"" ---> Exp (Ident "str") [Str "foo",Str "\n",Ident "bar"]

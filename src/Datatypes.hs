@@ -15,7 +15,6 @@ data Form = Int Integer
           | Str String
           | Ident String
           | Exp Form [Form] 
-          | Binop String Form Form
             deriving (Eq, Show, Read)
 
 makeVector :: [Form] -> Form
@@ -29,6 +28,9 @@ makeDot left right = Exp (Ident "dot") [left, right]
 
 makeSubscript :: Form -> Form -> Form
 makeSubscript left right = Exp (Ident "at") [left, right]
+
+makeBinop :: String -> Form -> Form -> Form
+makeBinop name left right = Exp (Ident name) [left, right]
             
 -- | Indicates a failure during parsing.
 type ReadError = Parsec.ParseError

@@ -30,6 +30,7 @@ module Token (
   skipSpaces,
   withSkippedWhitespace,
   operator,
+  opSymbols
 ) where
 
 import           Datatypes
@@ -76,9 +77,9 @@ opSymbols = "!%&*-+=|?/<>"
 operator :: String -> CantorParser (Form -> Form -> Form)
 operator name = try $ do
   string name
-  notFollowedBy $ (oneOf opSymbols <|> alphaNum)
-  withSkippedWhitespace " \t\n" skipSpaces
-  return $ Binop name
+  notFollowedBy $ oneOf opSymbols <|> alphaNum
+  withSkippedWhitespace " \n" skipSpaces
+  return $ makeBinop name
 
 -- | Parses the exponent part of a float in scientific notation.  
 exponentPart :: CantorParser String
@@ -167,9 +168,9 @@ charAscii = choice (map parseAscii asciiMap)
   where parseAscii (asc,code) = try (string asc >> return code)
 
 escMap :: [(Char, Char)]
-escMap = zip ("abfnrtv\\\"\'") ("\a\b\f\n\r\t\v\\\"\'")
+escMap = zip "abfnrtv\\\"\'" "\a\b\f\n\r\t\v\\\"\'"
 
-asciiMap :: [([Char], Char)]
+asciiMap :: [(String, Char)]
 asciiMap = zip (ascii3codes ++ ascii2codes) (ascii3 ++ ascii2)
 
 ascii2codes :: [String]
@@ -181,11 +182,11 @@ ascii3codes = ["NUL","SOH","STX","ETX","EOT","ENQ","ACK","BEL",
                "DLE","DC1","DC2","DC3","DC4","NAK","SYN","ETB",
                "CAN","SUB","ESC","DEL"]
 
-ascii2 :: [Char]
+ascii2 :: String
 ascii2 = ['\BS','\HT','\LF','\VT','\FF','\CR','\SO','\SI',
           '\EM','\FS','\GS','\RS','\US','\SP']
 
-ascii3 :: [Char]
+ascii3 :: String
 ascii3 = ['\NUL','\SOH','\STX','\ETX','\EOT','\ENQ','\ACK',
           '\BEL','\DLE','\DC1','\DC2','\DC3','\DC4','\NAK',
           '\SYN','\ETB','\CAN','\SUB','\ESC','\DEL']

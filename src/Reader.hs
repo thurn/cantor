@@ -46,9 +46,10 @@ showForm (Exp (Ident "Vector") xs) = "[" ++ unwords (map showForm xs) ++ "]"
 showForm (Exp (Ident "dot") [left,right]) = showForm left ++ "." ++ showForm right
 showForm (Exp (Ident "at") [left,right]) = showForm left ++ "[" ++ showForm right ++ "]"
 showForm (Exp (Ident "nil") []) = "()"
+showForm (Exp (Ident s@(x:_)) [left, right]) | x `elem` opSymbols =
+    "(" ++ showForm left ++ " " ++ s ++ " " ++ showForm right ++ ")"
 showForm (Exp x xs) = "(" ++ unwords (map showForm (x:xs)) ++ ")"
-showForm (Binop s left right) = "(" ++ showForm left ++ " " ++ s ++ " " ++
-                                showForm right ++ ")"
+                                
 
 -- | Uses the specified parser to parse a string, returning the result or a
 -- ParseError.
@@ -122,8 +123,7 @@ stringNewline column = do
 stringUnquote :: CantorParser Form
 stringUnquote = do
   char '~' <?> "unquote"
-  form <- withSkippedWhitespace "" (complexFormSkipping "")
-  return form
+  withSkippedWhitespace "" (complexFormSkipping "")
 
 -- | Makes a parser which looks for an opening delimiter, then applies the
 -- supplied parser, then looks for a closing delimiter.
@@ -237,7 +237,8 @@ functionCall = do
   forms <- many1 complexForm
   return $ sexpify forms
   where sexpify [form] = form
-        sexpify (x:xs)  = Exp x xs
+        sexpify (x:xs) = Exp x xs
+        sexpify [] = error "'many1' parser returned an empty list"
 
 -- | An operator precedence parser which correctly handles the operators in
 -- operatorTable as well as the convention that multiple forms separated by
