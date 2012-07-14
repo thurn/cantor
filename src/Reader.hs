@@ -9,7 +9,7 @@ module Reader (
   readForms,
   showForms,
 ) where
-import           Control.Applicative ((<$>))
+import           Control.Applicative ((<$>), (<*>))
 import           Data.List           (intercalate)
 import           Datatypes
 import           Text.Parsec
@@ -41,12 +41,12 @@ showForm (Int i)   = show i
 showForm (Float f) = show f
 showForm (Ident i) = i
 showForm (Str s) = show s
-showForm (Sexp []) = "()"
-showForm (Sexp (Ident "Map":xs)) = "{" ++ unwords (map showForm xs) ++ "}"
-showForm (Sexp (Ident "Vector":xs)) = "[" ++ unwords (map showForm xs) ++ "]"
-showForm (Sexp [Ident "dot",left,right]) = showForm left ++ "." ++ showForm right
-showForm (Sexp [Ident "at",left,right]) = showForm left ++ "[" ++ showForm right ++ "]"
-showForm (Sexp xs) = "(" ++ unwords (map showForm (xs)) ++ ")"
+showForm (Exp (Ident "Map") xs) = "{" ++ unwords (map showForm xs) ++ "}"
+showForm (Exp (Ident "Vector") xs) = "[" ++ unwords (map showForm xs) ++ "]"
+showForm (Exp (Ident "dot") [left,right]) = showForm left ++ "." ++ showForm right
+showForm (Exp (Ident "at") [left,right]) = showForm left ++ "[" ++ showForm right ++ "]"
+showForm (Exp (Ident "nil") []) = "()"
+showForm (Exp x xs) = "(" ++ unwords (map showForm (x:xs)) ++ ")"
 showForm (Binop s left right) = "(" ++ showForm left ++ " " ++ s ++ " " ++
                                 showForm right ++ ")"
 
@@ -56,13 +56,13 @@ runParse :: CantorParser a -> String -> Either ParseError a
 runParse aParser input = runIndent "" run
   where run = runParserT aParser (SkippedWhitespace " ") "" input
 
--- | Reads a form, handling indentation correctly as a way to create a Sexp.
+-- | Reads a form, handling indentation correctly as a way to create an Exp.
 indentedForm :: CantorParser Form
 indentedForm = do
   checkIndent
-  withBlock makeSexp readLine indentedForm
-  where makeSexp first []   = first
-        makeSexp first rest = Sexp $ first : rest
+  withBlock makeExp readLine indentedForm
+  where makeExp first []   = first
+        makeExp first rest = Exp first rest
 
 -- | Reads all of the forms on a single line of input.
 readLine :: CantorParser Form
@@ -94,7 +94,7 @@ stringLiteral = do
   return $ simplify forms
   where simplify []          = Str ""
         simplify [s@(Str _)] = s
-        simplify xs          = Sexp $ Ident "str" : xs
+        simplify xs          = Exp (Ident "str") xs
 
 -- | Parses a c++ literal
 cppLiteral :: CantorParser Form
@@ -104,10 +104,10 @@ cppLiteral = do
   forms <- many (stringUnquote <|> cppComponent <|> stringNewline column)
   char '`'
   skipSpaces
-  return $ Sexp [Ident "cpp", simplify forms]
+  return $ Exp (Ident "cpp") [simplify forms]
   where simplify []          = Str ""
         simplify [s@(Str _)] = s
-        simplify xs          = Sexp $ Ident "str" : xs
+        simplify xs          = Exp (Ident "str") xs
         cppChar c = c /= '`' && c /= '~' && c > '\026'
         cppComponent = Str <$> many1 (satisfy cppChar)
 
@@ -158,8 +158,8 @@ readMap = makeMap <$>
 readParenthesized :: CantorParser Form
 readParenthesized = try singleForm <|> multipleForms
   where readParens    = readBetween '(' ')' "expression"
-        singleForm    = Sexp . return <$> readParens complexForm
-        multipleForms = readParens $ option (Sexp []) expression
+        singleForm    = Exp <$> readParens complexForm <*> return []
+        multipleForms = readParens $ option (Exp (Ident "nil") []) expression
 
 -- | Creates an operator parser for an infix, left associative operator with
 -- the specified name.
@@ -221,8 +221,8 @@ complexFormSkipping s = do
   methodCalls <- many (try (methodCall s))
   return $ foldl1 fold (expr : methodCalls)
   where fold accum ident@(Ident _)    = makeDot accum ident
-        fold accum (Sexp [Ident "at",x,y]) = makeSubscript (fold accum x) y
-        fold accum (Sexp (x:xs)) = Sexp $ makeDot accum x : xs
+        fold accum (Exp (Ident "at") [x,y]) = makeSubscript (fold accum x) y
+        fold accum (Exp x xs) = Exp (makeDot accum x) xs
         fold _ form = error ("Unexpected token in complexForm " ++ show form)
 
 -- | Parses a complex form, skipping spaces and newlines after the '.' operator
@@ -237,7 +237,7 @@ functionCall = do
   forms <- many1 complexForm
   return $ sexpify forms
   where sexpify [form] = form
-        sexpify forms  = Sexp forms
+        sexpify (x:xs)  = Exp x xs
 
 -- | An operator precedence parser which correctly handles the operators in
 -- operatorTable as well as the convention that multiple forms separated by

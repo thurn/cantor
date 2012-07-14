@@ -78,8 +78,10 @@ arbitraryForm n = frequency [
     (1, listOfSize 0)
   ]
   where nextRandom = arbitraryForm (n `div` 2)
+        makeExp []     = Exp (Ident "nil") []
+        makeExp (x:xs) = Exp x xs
         listOfSize size = do
-          fn <- elements [makeMap, makeVector, Sexp]
+          fn <- elements [makeMap, makeVector, makeExp]
           fn <$> vectorOf size nextRandom
 
 prop_stringConcat :: ArbitraryString -> ArbitraryString -> Bool
@@ -95,8 +97,8 @@ prop_stringUnquote (ArbitraryString s1) form (ArbitraryString s2) =
     readAndCheck generated $ (== [expected]) . (map dropEmptyStrs)
   where generated = "\"" ++ showDropDelimiters s1 ++ "~" ++ showForms [form] ++
                     "\\&" ++ showDropDelimiters s2 ++ "\""
-        expected = dropEmptyStrs $ Sexp [Ident "str", Str s1, form, Str s2]
-        dropEmptyStrs (Sexp xs) = Sexp $ filter (/= Str "") xs
+        expected = dropEmptyStrs $ Exp (Ident "str") [Str s1, form, Str s2]
+        dropEmptyStrs (Exp x xs) = Exp x $ filter (/= Str "") xs
         dropEmptyStrs x         = x
 
 -- | Reads forms from the provided string and applies the provided predicate to
@@ -175,10 +177,10 @@ prop_validSyntax :: ValidSyntax -> Bool
 prop_validSyntax (BalancedString s) = readWithOutcome True s
 prop_validSyntax (ArbitraryIdent s) = readAndCheck s (== [Ident s])
 prop_validSyntax (ArbitraryVector s) = readAndCheck s isVector
-  where isVector [Sexp (Ident "Vector":_)] = True
+  where isVector [Exp (Ident "Vector") _] = True
         isVector _          = False
 prop_validSyntax (ArbitraryDict s) = readAndCheck s isMap
-  where isMap [Sexp (Ident "Map":_)] = True
+  where isMap [Exp (Ident "Map") _] = True
         isMap _                      = False
 
 (--->) :: String -> Form -> Assertion
@@ -276,12 +278,13 @@ case_indent = do
 
 case_parens :: Assertion
 case_parens = do
-  "(foo)" ---> Sexp [Ident "foo"]
-  "(foo bar)" ---> Sexp [Ident "foo",Ident "bar"]
-  "((foo))" ---> Sexp [Sexp [Ident "foo"]]
-  "((foo bar))" ---> Sexp [Sexp [Ident "foo",Ident "bar"]]
+  "()" ---> Exp (Ident "nil") []
+  "(foo)" ---> Exp (Ident "foo") []
+  "(foo bar)" ---> Exp (Ident "foo") [Ident "bar"]
+  "((foo))" ---> Exp (Exp (Ident "foo") []) []
+  "((foo bar))" ---> Exp (Exp (Ident "foo") [Ident "bar"]) []
   "(foo + bar)" ---> Binop "+" (Ident "foo") (Ident "bar")
-  "((foo + bar))" ---> Sexp [Binop "+" (Ident "foo") (Ident "bar")]
+  "((foo + bar))" ---> Exp (Binop "+" (Ident "foo") (Ident "bar")) []
 
 case_operators :: Assertion
 case_operators = do
@@ -292,7 +295,7 @@ case_operators = do
   "1 * 1 * 2" --->
       Binop "*" (Binop "*" (Int 1) (Int 1)) (Int 2)
   "print 1 + print 2" --->
-      Binop "+" (Sexp [Ident "print",Int 1]) (Sexp [Ident "print",Int 2])
+      Binop "+" (Exp (Ident "print") [Int 1]) (Exp (Ident "print") [Int 2])
   "foo.bar" ---> makeDot (Ident "foo") (Ident "bar")
   "foo. bar" ---> makeDot (Ident "foo") (Ident "bar")
   "foo .bar" ---> makeDot (Ident "foo") (Ident "bar")
@@ -301,31 +304,32 @@ case_operators = do
           (makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz"))
           (Int 2)
   "print foo.bar.baz" --->
-      Sexp [Ident "print",
-            makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz")]
+      Exp (Ident "print")
+            [makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz")]
   "1 +\n1" ---> Binop "+" (Int 1) (Int 1)
   "foo .\nbar" ---> makeDot (Ident "foo") (Ident "bar")
   "foo.\nbar.\nbaz" ---> makeDot (makeDot (Ident "foo") (Ident "bar")) (Ident "baz")
-  "foo.bar 1 2" ---> Sexp [makeDot (Ident "foo") (Ident "bar"),Int 1,Int 2]
+  "foo.bar 1 2" ---> Exp (makeDot (Ident "foo") (Ident "bar")) [Int 1,Int 2]
   "bar foo.baz 1 2" --->
-      Sexp [Ident "bar",makeDot (Ident "foo") (Ident "baz"),Int 1,Int 2]
+      Exp (Ident "bar") [makeDot (Ident "foo") (Ident "baz"),Int 1,Int 2]
   "list.filter foo.map baz.sort" --->
-      Sexp [makeDot (Ident "list") (Ident "filter"),
-            makeDot (Ident "foo") (Ident "map"),
+      Exp (makeDot (Ident "list") (Ident "filter"))
+            [makeDot (Ident "foo") (Ident "map"),
             makeDot (Ident "baz") (Ident "sort")]
   "(list.(filter foo).(map baz).sort)" --->
-      Sexp [makeDot (Sexp [makeDot (Sexp [makeDot (Ident "list")
-                                      (Ident "filter"),
-                                  Ident "foo"])
-                           (Ident "map"),
-                       Ident "baz"])
-                (Ident "sort")]
+      Exp (makeDot (Exp (makeDot (Exp (makeDot (Ident "list")
+                                                  (Ident "filter"))
+                                  [Ident "foo"])
+                                  (Ident "map"))
+                       [Ident "baz"])
+                       (Ident "sort"))
+                       []
   "list.(filter foo).(map baz).(sort)" --->
-      makeDot (Sexp [makeDot (Sexp [makeDot (Ident "list")
-                                (Ident "filter"),
-                            Ident "foo"])
-                     (Ident "map"),
-                Ident "baz"])
+      makeDot (Exp (makeDot (Exp (makeDot (Ident "list")
+                                (Ident "filter"))
+                            [Ident "foo"])
+                     (Ident "map"))
+                [Ident "baz"])
           (Ident "sort")
 
 case_subscript :: Assertion
@@ -367,17 +371,17 @@ case_subscript = do
                      (Ident "baz"))
                 (Int 1)
   "foo.(bar baz)[1]" --->
-      makeSubscript (Sexp [makeDot (Ident "foo")
-                           (Ident "bar"),
-                      Ident "baz"])
+      makeSubscript (Exp (makeDot (Ident "foo")
+                           (Ident "bar"))
+                      [Ident "baz"])
                 (Int 1)
   "foo.(bar baz)[1].(a b)" --->
-      Sexp [makeDot (makeSubscript (Sexp [makeDot (Ident "foo")
-                                      (Ident "bar"),
-                                 Ident "baz"])
+      Exp (makeDot (makeSubscript (Exp (makeDot (Ident "foo")
+                                      (Ident "bar"))
+                                 [Ident "baz"])
                            (Int 1))
-                (Ident "a"),
-           Ident "b"]
+                (Ident "a"))
+           [Ident "b"]
   "[foo.bar[2].baz]" --->
       makeVector [makeDot (makeSubscript (makeDot (Ident "foo")
                                       (Ident "bar"))
@@ -388,56 +392,56 @@ case_subscript = do
                            (Int 2))
                 (Int 3)
   "foo[bar] [baz]" --->
-      Sexp [makeSubscript (Ident "foo")
-                      (Ident "bar"),
-            makeVector [Ident "baz"]]
+      Exp (makeSubscript (Ident "foo")
+                      (Ident "bar"))
+            [makeVector [Ident "baz"]]
 
 case_string :: Assertion
 case_string = do
-  "\"~foo\"" ---> Sexp [Ident "str",Ident "foo"]
-  "\"~1\"" ---> Sexp [Ident "str",Int 1]
-  "\"~foo bar\"" ---> Sexp [Ident "str",Ident "foo",Str " bar"]
+  "\"~foo\"" ---> Exp (Ident "str") [Ident "foo"]
+  "\"~1\"" ---> Exp (Ident "str") [Int 1]
+  "\"~foo bar\"" ---> Exp (Ident "str") [Ident "foo",Str " bar"]
   "\"foo ~bar baz ~qux ~alpha\"" --->
-      Sexp [Ident "str",Str "foo ",Ident "bar",Str " baz ",Ident "qux",Str " ",
+      Exp (Ident "str") [Str "foo ",Ident "bar",Str " baz ",Ident "qux",Str " ",
             Ident "alpha"]
   "\"~\"str\"\"" ---> Str "str"
   "\"~(foo bar baz)\"" --->
-      Sexp [Ident "str",Sexp [Ident "foo",Ident "bar",Ident "baz"]]
+      Exp (Ident "str") [Exp (Ident "foo") [Ident "bar",Ident "baz"]]
   "\"~(1 + 2)\"" --->
-      Sexp [Ident "str",Binop "+" (Int 1) (Int 2)]
-  "\"~[1 2 3]\"" ---> Sexp [Ident "str",makeVector [Int 1,Int 2,Int 3]]
-  "\"~foo.bar\"" ---> Sexp [Ident "str",makeDot (Ident "foo") (Ident "bar")]
+      Exp (Ident "str") [Binop "+" (Int 1) (Int 2)]
+  "\"~[1 2 3]\"" ---> Exp (Ident "str") [makeVector [Int 1,Int 2,Int 3]]
+  "\"~foo.bar\"" ---> Exp (Ident "str") [makeDot (Ident "foo") (Ident "bar")]
   "\"~(foo.bar)\"" --->
-      Sexp [Ident "str",Sexp [makeDot (Ident "foo") (Ident "bar")]]
+      Exp (Ident "str") [Exp (makeDot (Ident "foo") (Ident "bar")) []]
   "\"~foo.bar .baz\"" --->
-      Sexp [Ident "str",makeDot (Ident "foo") (Ident "bar"),Str " .baz"]
+      Exp (Ident "str") [makeDot (Ident "foo") (Ident "bar"),Str " .baz"]
   "\"~foo.bar[2]\"" --->
-      Sexp [Ident "str",makeSubscript (makeDot (Ident "foo") (Ident "bar")) (Int 2)]
+      Exp (Ident "str") [makeSubscript (makeDot (Ident "foo") (Ident "bar")) (Int 2)]
   "\"~foo.bar.\"" --->
-      Sexp [Ident "str",makeDot (Ident "foo") (Ident "bar"),Str "."]
+      Exp (Ident "str") [makeDot (Ident "foo") (Ident "bar"),Str "."]
   "\"~foo.bar [2]\"" --->
-      Sexp [Ident "str",makeDot (Ident "foo") (Ident "bar"),Str " [2]"]
+      Exp (Ident "str") [makeDot (Ident "foo") (Ident "bar"),Str " [2]"]
   "\"~foo.bar.baz[2].qux\"" --->
-      Sexp [Ident "str",makeDot (makeSubscript (makeDot (makeDot (Ident "foo")
+      Exp (Ident "str") [makeDot (makeSubscript (makeDot (makeDot (Ident "foo")
                                                  (Ident "bar"))
                                             (Ident "baz"))
                                        (Int 2))
                             (Ident "qux")]
   "\"\"" ---> Str ""
-  "\"foo\n bar\"" ---> Sexp [Ident "str",Str "foo",Str "\n",Str "bar"]
-  "\"foo\n ~bar\"" ---> Sexp [Ident "str",Str "foo",Str "\n",Ident "bar"]
-  "\"foo\n \"" ---> Sexp [Ident "str",Str "foo",Str "\n"]
-  "\"\n foo\"" ---> Sexp [Ident "str",Str "\n", Str "foo"]
+  "\"foo\n bar\"" ---> Exp (Ident "str") [Str "foo",Str "\n",Str "bar"]
+  "\"foo\n ~bar\"" ---> Exp (Ident "str") [Str "foo",Str "\n",Ident "bar"]
+  "\"foo\n \"" ---> Exp (Ident "str") [Str "foo",Str "\n"]
+  "\"\n foo\"" ---> Exp (Ident "str") [Str "\n", Str "foo"]
   "\"\n \"" ---> Str "\n"
 
 case_cppLiteral :: Assertion
 case_cppLiteral = do
-  "#``" ---> Sexp [Ident "cpp",Str ""]
-  "#`foo`" ---> Sexp [Ident "cpp",Str "foo"]
+  "#``" ---> Exp (Ident "cpp") [Str ""]
+  "#`foo`" ---> Exp (Ident "cpp") [Str "foo"]
   "#`foo\n  bar`" --->
-      Sexp [Ident "cpp",Sexp [Ident "str",Str "foo",Str "\n",Str "bar"]]
-  "#`~foo`" ---> Sexp [Ident "cpp",Sexp [Ident "str",Ident "foo"]]
-  "#`\\n`" ---> Sexp [Ident "cpp",Str "\\n"]
+      Exp (Ident "cpp") [Exp (Ident "str") [Str "foo",Str "\n",Str "bar"]]
+  "#`~foo`" ---> Exp (Ident "cpp") [Exp (Ident "str") [Ident "foo"]]
+  "#`\\n`" ---> Exp (Ident "cpp") [Str "\\n"]
 
 readerTests :: Test
 readerTests = $testGroupGenerator

@@ -7,28 +7,28 @@ import qualified Control.Monad.State as State
 import qualified Text.Parsec         as Parsec
 import qualified Text.Parsec.Expr as Expr
 
--- | Forms are the components of the Cantor parse tree. A form can be 1) an
--- atom, such as an identifier or literal, 2) an operator application to other
--- forms, or 3) A Sexp (a list of forms).
+-- | Forms are the components of the Cantor parse tree. A form can be an
+-- atom, such as an identifier or literal, or an Exp, an application of
+-- arguments to a function.
 data Form = Int Integer
           | Float Double
           | Str String
           | Ident String
-          | Sexp [Form] 
+          | Exp Form [Form] 
           | Binop String Form Form
             deriving (Eq, Show, Read)
 
 makeVector :: [Form] -> Form
-makeVector = Sexp . (Ident "Vector" :)
+makeVector = Exp (Ident "Vector")
 
 makeMap :: [Form] -> Form
-makeMap = Sexp . (Ident "Map" :)
+makeMap = Exp (Ident "Map")
 
 makeDot :: Form -> Form -> Form
-makeDot left right = Sexp [Ident "dot", left, right]
+makeDot left right = Exp (Ident "dot") [left, right]
 
 makeSubscript :: Form -> Form -> Form
-makeSubscript left right = Sexp [Ident "at", left, right]
+makeSubscript left right = Exp (Ident "at") [left, right]
             
 -- | Indicates a failure during parsing.
 type ReadError = Parsec.ParseError
