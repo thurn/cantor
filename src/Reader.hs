@@ -62,8 +62,9 @@ indentedForm :: CantorParser Form
 indentedForm = do
   checkIndent
   withBlock makeExp readLine indentedForm
-  where makeExp first []   = first
-        makeExp first rest = Exp first rest
+  where makeExp first []         = first
+        makeExp (Exp x [y]) rest = Exp x (y : rest)
+        makeExp first rest       = Exp first rest
 
 -- | Reads all of the forms on a single line of input.
 readLine :: CantorParser Form
@@ -82,7 +83,14 @@ readForm = identifier        <|>
            cppLiteral        <|>
            readParenthesized <|>
            readVector        <|>
-           readMap
+           readMap           <|>
+           readQuote
+
+readQuote :: CantorParser Form
+readQuote = do
+  char '\'' <?> "quoted form"
+  form <- complexFormNoWhitespace <|> operatorIdentifier
+  return $ Exp (Ident "quote") [form]
 
 -- | Parses a string literal
 stringLiteral :: CantorParser Form
@@ -123,7 +131,7 @@ stringNewline column = do
 stringUnquote :: CantorParser Form
 stringUnquote = do
   char '~' <?> "unquote"
-  withSkippedWhitespace "" (complexFormSkipping "")
+  complexFormNoWhitespace
 
 -- | Makes a parser which looks for an opening delimiter, then applies the
 -- supplied parser, then looks for a closing delimiter.
@@ -224,6 +232,9 @@ complexFormSkipping s = do
         fold accum (Exp (Ident "at") [x,y]) = makeSubscript (fold accum x) y
         fold accum (Exp x xs) = Exp (makeDot accum x) xs
         fold _ form = error ("Unexpected token in complexForm " ++ show form)
+
+complexFormNoWhitespace :: CantorParser Form
+complexFormNoWhitespace = withSkippedWhitespace "" (complexFormSkipping "")
 
 -- | Parses a complex form, skipping spaces and newlines after the '.' operator
 -- for method calls.

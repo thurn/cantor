@@ -30,6 +30,7 @@ module Token (
   skipSpaces,
   withSkippedWhitespace,
   operator,
+  operatorIdentifier,
   opSymbols
 ) where
 
@@ -72,6 +73,13 @@ identifier = do
 -- | Symbols that may occur as part of an operator
 opSymbols :: String
 opSymbols = "!%&*-+=|?/<>"
+
+-- | Parses an operator as an identifier.
+operatorIdentifier :: CantorParser Form
+operatorIdentifier = do
+  c <- oneOf opSymbols
+  cs <- many (alphaNum <|> oneOf opSymbols)
+  return $ Ident $ c:cs
 
 -- | Creates a parser which recognizes the operator with the specified name.
 operator :: String -> CantorParser (Form -> Form -> Form)

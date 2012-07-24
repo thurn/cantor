@@ -63,6 +63,9 @@ arbitraryDot genForm = makeDot <$> genForm <*> (Ident <$> arbitraryIdent)
 arbitrarySubscript :: Gen Form -> Gen Form -> Gen Form
 arbitrarySubscript genForm1 genForm2 = makeSubscript <$> genForm1 <*> genForm2
 
+arbitraryQuote :: Gen Form -> Gen Form
+arbitraryQuote genForm = Exp (Ident "quote") . return <$> genForm
+
 arbitraryForm :: Int -> Gen Form
 arbitraryForm 0 = arbitraryAtom
 arbitraryForm n = frequency [
@@ -72,6 +75,7 @@ arbitraryForm n = frequency [
     (5, arbitraryBinop nextRandom nextRandom),
     (5, arbitrarySubscript nextRandom nextRandom),
     (5, arbitraryDot nextRandom),
+    (5, arbitraryQuote nextRandom),
     (1, listOfSize 3),
     (1, listOfSize 4),
     (1, listOfSize 5),
@@ -203,8 +207,9 @@ case_dict = do
   "{1 2}" ---> makeMap [Int 1, Int 2]
 
 readSame :: String -> String -> Assertion
-x `readSame` y = assertEqual "Forms not equal!" (rightRead x) (rightRead y)
-  where rightRead s = case readForms s of
+x `readSame` y = assertEqual message (rightRead x) (rightRead y)
+  where message = "Forms not equal! " ++ x ++ " and " ++ y
+        rightRead s = case readForms s of
           (Left err)    ->
               error ("\n\n" ++ show err ++ "\n\nFor input:\n\n" ++ s ++ "\n")
           (Right forms) -> forms
@@ -238,7 +243,7 @@ case_indent = do
   "alpha\n  bravo" `readSame`
       "(alpha bravo)"
   "alpha bravo\n  charlie" `readSame`
-      "((alpha bravo) charlie)"
+      "(alpha bravo charlie)"
   "alpha bravo charlie\n  delta" `readSame`
       "((alpha bravo charlie) delta)"
   "alpha\n  bravo\n  charlie" `readSame`
@@ -250,13 +255,13 @@ case_indent = do
   "alpha\n  bravo\n    charlie" `readSame`
       "(alpha (bravo charlie))"
   "alpha\n  bravo charlie\n    delta" `readSame`
-      "(alpha ((bravo charlie) delta))"
+      "(alpha (bravo charlie delta))"
   "alpha\n  bravo\n    charlie delta" `readSame`
       "(alpha (bravo (charlie delta)))"
   "alpha\n  bravo charlie\n    delta echo" `readSame`
-      "(alpha ((bravo charlie) (delta echo)))"
+      "(alpha (bravo charlie (delta echo)))"
   "alpha bravo\n  charlie delta\n    echo foxtrot" `readSame`
-      "((alpha bravo) ((charlie delta) (echo foxtrot)))"
+      "(alpha bravo (charlie delta (echo foxtrot)))"
   "alpha\n  ()" `readSame`
       "(alpha ())"
   "alpha\n  (bravo)" `readSame`
@@ -274,7 +279,7 @@ case_indent = do
   "alpha\n  (bravo\n    )\n  charlie" `readSame`
       "(alpha (bravo) charlie)"
   " alpha bravo" `readSame` "(alpha bravo)"
-  " alpha bravo\n   charlie" `readSame` "((alpha bravo) charlie)"
+  " alpha bravo\n   charlie" `readSame` "(alpha bravo charlie)"
 
 case_parens :: Assertion
 case_parens = do
@@ -443,6 +448,23 @@ case_cppLiteral = do
       Exp (Ident "cpp") [Exp (Ident "str") [Str "foo",Str "\n",Str "bar"]]
   "#`~foo`" ---> Exp (Ident "cpp") [Exp (Ident "str") [Ident "foo"]]
   "#`\\n`" ---> Exp (Ident "cpp") [Str "\\n"]
+
+case_quote :: Assertion
+case_quote = do
+  "'foo" ---> Exp (Ident "quote") [Ident "foo"]
+  "'12" ---> Exp (Ident "quote") [Int 12]
+  "'(foo)" ---> Exp (Ident "quote") [Exp (Ident "foo") []]
+  "'(foo bar)" ---> Exp (Ident "quote") [Exp (Ident "foo") [Ident "bar"]]
+  "'[1 2 3]" ---> Exp (Ident "quote") [Exp (Ident "Vector") [Int 1,Int 2,Int 3]]
+  "'(foo + bar)" ---> Exp (Ident "quote") [Exp (Ident "+") [Ident "foo",Ident "bar"]]
+  "'+" ---> Exp (Ident "quote") [Ident "+"]
+  "'>>" ---> Exp (Ident "quote") [Ident ">>"]
+  "'+foo+" ---> Exp (Ident "quote") [Ident "+foo+"]
+
+prop_quote :: Form -> Bool
+prop_quote form = readAndCheck input (== expected)
+  where input = "'" ++ showForms [form]
+        expected = [Exp (Ident "quote") [form]]
 
 readerTests :: Test
 readerTests = $testGroupGenerator
