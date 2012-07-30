@@ -35,6 +35,9 @@ makeBinop name left right = Exp (Ident name) [left, right]
 -- | Indicates a failure during parsing.
 type ReadError = Parsec.ParseError
 
+-- | Indicates a failure during translation.
+newtype TranslationError = TranslationError String deriving (Show)
+
 -- | The name of a parser input
 type InputName = String
 

@@ -8,6 +8,7 @@ module Main (
 ) where
 
 import ReaderTest (readerTests)
+import TranslatorTest (translatorTests)
 import Test.Framework (defaultMain)
 
 -- | Main function
@@ -17,7 +18,8 @@ exeMain = undefined
 -- | Entry point for unit tests
 testMain :: IO ()
 testMain = defaultMain [
-  readerTests
+  readerTests,
+  translatorTests
  ]
 
 -- This is a clunky, but portable, way to use the same Main module file

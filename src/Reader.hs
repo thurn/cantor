@@ -1,8 +1,7 @@
 -- This is free and unencumbered software released into the public domain.
 
--- | The Reader module is responsible for defining the Form datatype and for
--- implementing parser functionality for transforming inputs such as strings
--- into valid parse trees consisting of Forms.
+-- | The Reader module is responsible implementing parser functionality for
+-- converting inputs such as strings into valid parse trees consisting of Forms.
 module Reader (
   ReadError,
   InputName,
@@ -62,9 +61,10 @@ indentedForm :: CantorParser Form
 indentedForm = do
   checkIndent
   withBlock makeExp readLine indentedForm
-  where makeExp first []         = first
-        makeExp (Exp x [y]) rest = Exp x (y : rest)
-        makeExp first rest       = Exp first rest
+  where makeExp first []            = first
+        makeExp (Exp x [y]) rest    = Exp x (y : rest)
+        makeExp (Exp x (y:ys)) rest = Exp x $ (Exp y ys) : rest
+        makeExp first rest          = Exp first rest
 
 -- | Reads all of the forms on a single line of input.
 readLine :: CantorParser Form

@@ -245,7 +245,7 @@ case_indent = do
   "alpha bravo\n  charlie" `readSame`
       "(alpha bravo charlie)"
   "alpha bravo charlie\n  delta" `readSame`
-      "((alpha bravo charlie) delta)"
+      "(alpha (bravo charlie) delta)"
   "alpha\n  bravo\n  charlie" `readSame`
       "(alpha bravo charlie)"
   "alpha\n  bravo charlie" `readSame`
@@ -280,6 +280,8 @@ case_indent = do
       "(alpha (bravo) charlie)"
   " alpha bravo" `readSame` "(alpha bravo)"
   " alpha bravo\n   charlie" `readSame` "(alpha bravo charlie)"
+  "alpha bravo charlie\n  delta echo" `readSame` "(alpha (bravo charlie) (delta echo))"
+  "alpha bravo charlie delta\n  echo" `readSame` "(alpha (bravo charlie delta) echo)"
 
 case_parens :: Assertion
 case_parens = do

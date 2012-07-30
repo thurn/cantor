@@ -24,7 +24,8 @@ executable cantor
                       test-framework-th >= 0.2,
                       parsec >= 3.1,
                       mtl >= 2.0,
-                      indents >= 0.3
+                      indents >= 0.3,
+                      containers >= 0.4
 
 test-suite test-cantor
     type:             exitcode-stdio-1.0
@@ -43,4 +44,5 @@ test-suite test-cantor
                       test-framework-th >= 0.2,
                       parsec >= 3.1,
                       mtl >= 2.0,
-                      indents >= 0.3
+                      indents >= 0.3,
+                      containers >= 0.4
